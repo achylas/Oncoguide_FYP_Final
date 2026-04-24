@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "368815703592",
+    "project_id": "oncoguide-bf10c",
+    "storage_bucket": "oncoguide-bf10c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:368815703592:android:e79cb7ac546aa59f83171d",
+        "android_client_info": {
+          "package_name": "com.example.oncoguide_frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDFoAxxxxzC8eSoKnNUeQ8xskJjsZS-U5Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,53 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "mammogram_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "doctorId",   "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "mammogram_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "patientId",  "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ultrasound_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "doctorId",   "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ultrasound_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "patientId",  "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "cancer_patients",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "flaggedBy",  "order": "ASCENDING"  },
+        { "fieldPath": "flaggedAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "risk_patients",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "flaggedBy",  "order": "ASCENDING"  },
+        { "fieldPath": "flaggedAt",  "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

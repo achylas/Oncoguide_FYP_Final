@@ -1,0 +1,42 @@
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+*.iml
+
+# Android
+android/.gradle/
+android/local.properties
+android/key.properties
+android/app/google-services.json
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+
+# Environment
+.env
+
+# Backend — venv and large model files
+backend/venv/
+backend/__pycache__/
+backend/*.pkl
+backend/*.pth
+backend/*.pth.zip
+backend/*.pt
+backend/*.pt.zip
+backend/*.h5
+backend/*.onnx
+
+# HF deployment model files (on HuggingFace already)
+hf_deployment/*.pkl
+hf_deployment/*.pth
+hf_deployment/*.pth.zip
+hf_deployment/*.pt
+hf_deployment/*.pt.zip
