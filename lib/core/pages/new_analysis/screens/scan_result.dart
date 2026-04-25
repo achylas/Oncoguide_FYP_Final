@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:oncoguide_v2/core/conts/colors.dart';
 import 'package:oncoguide_v2/services/api_service.dart';
+import 'package:oncoguide_v2/services/pdf_service.dart';
+import 'package:oncoguide_v2/services/recommendation_engine.dart';
 import '../../../widgets/resuable_top_bar.dart';
 import 'new_analysis_screen.dart';
 
@@ -20,7 +22,7 @@ import 'new_analysis_screen.dart';
 // 10. Disclaimer
 // ─────────────────────────────────────────────────────────────────────────────
 
-class ScanResultPage extends StatelessWidget {
+class ScanResultPage extends StatefulWidget {
   final Map<String, dynamic> selectedPatient;
   final Map<ImagingType, File?> uploadedImages;
   final Set<ImagingType> selectedImagingTypes;
@@ -40,26 +42,65 @@ class ScanResultPage extends StatelessWidget {
     this.ultrasoundAnalysis,
   });
 
-  // ── Derived values ──────────────────────────────────────────────────────────
-  bool get _isHighRisk => tabularResult?.prediction == 1;
-  double get _riskPct  => tabularResult?.riskPercentage ?? 0.0;
-  String get _riskLabel => tabularResult?.riskLabel ?? 'Pending';
+  @override
+  State<ScanResultPage> createState() => _ScanResultPageState();
+}
+
+class _ScanResultPageState extends State<ScanResultPage> {
+  bool _sharing = false;
+
+  bool get _isHighRisk => widget.tabularResult?.prediction == 1;
+  double get _riskPct  => widget.tabularResult?.riskPercentage ?? 0.0;
+  String get _riskLabel => widget.tabularResult?.riskLabel ?? 'Pending';
 
   String get _overallVerdict {
-    if (tabularResult == null) return 'Analysis Pending';
+    if (widget.tabularResult == null) return 'Analysis Pending';
     if (_isHighRisk) return 'High Risk Detected';
     return 'Low Risk';
   }
 
-  Color _verdictColor(bool isDark) =>
-      _isHighRisk ? const Color(0xFFEF4444) : const Color(0xFF10B981);
-
   String _getScanTypeLabel() {
-    if (selectedImagingTypes.length > 1) return 'Multi-modal';
-    if (selectedImagingTypes.isEmpty) return 'Clinical Data';
-    return selectedImagingTypes.first == ImagingType.mammogram
+    if (widget.selectedImagingTypes.length > 1) return 'Multi-modal';
+    if (widget.selectedImagingTypes.isEmpty) return 'Clinical Data';
+    return widget.selectedImagingTypes.first == ImagingType.mammogram
         ? 'Mammogram'
         : 'Ultrasound';
+  }
+
+  Future<void> _shareReport() async {
+    setState(() => _sharing = true);
+    try {
+      final reportData = {
+        'patientName'    : widget.selectedPatient['name'] ?? 'Unknown',
+        'patientAge'     : widget.selectedPatient['age'] ?? 0,
+        'riskLabel'      : widget.tabularResult?.riskLabel ?? '',
+        'riskPercentage' : widget.tabularResult?.riskPercentage ?? 0.0,
+        'shapValues'     : widget.tabularResult?.shapValues ?? {},
+        'baseValue'      : widget.tabularResult?.baseValue ?? 0.0,
+        'usPrediction'   : widget.ultrasoundAnalysis?.prediction,
+        'usConfidence'   : widget.ultrasoundAnalysis?.confidence,
+        'usProbabilities': widget.ultrasoundAnalysis?.probabilities,
+        // Include GradCAM base64 for PDF
+        'gradcamImage'   : widget.ultrasoundAnalysis?.gradcamImage ?? '',
+        // Include uploaded scan URLs if available from patient data
+        'mammogramUrl'   : null,
+        'ultrasoundUrl'  : null,
+        ...widget.selectedPatient,
+      };
+      await PdfService.shareReport(reportData);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Share failed: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
   }
 
   @override
@@ -67,10 +108,10 @@ class ScanResultPage extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF0A0E21) : const Color(0xFFF0F2F8);
 
-    final name   = selectedPatient['name']?.toString() ?? 'Unknown Patient';
-    final age    = (selectedPatient['age'] as num?)?.toInt() ?? 0;
-    final status = selectedPatient['medicalHistory']?.toString() ??
-        selectedPatient['status']?.toString() ?? '';
+    final name   = widget.selectedPatient['name']?.toString() ?? 'Unknown Patient';
+    final age    = (widget.selectedPatient['age'] as num?)?.toInt() ?? 0;
+    final status = widget.selectedPatient['medicalHistory']?.toString() ??
+        widget.selectedPatient['status']?.toString() ?? '';
 
     return Scaffold(
       backgroundColor: bg,
@@ -80,9 +121,24 @@ class ScanResultPage extends StatelessWidget {
         showBackButton: true,
         showSettingsButton: false,
       ),
+      // ── Share FAB ────────────────────────────────────────────────────────────
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _sharing ? null : _shareReport,
+        backgroundColor: const Color(0xFF6366F1),
+        icon: _sharing
+            ? const SizedBox(
+                width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : const Icon(Icons.share_rounded, color: Colors.white),
+        label: Text(
+          _sharing ? 'Preparing...' : 'Share Report',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+      ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -97,18 +153,18 @@ class ScanResultPage extends StatelessWidget {
               verdict: _overallVerdict,
               riskPct: _riskPct,
               scanType: _getScanTypeLabel(),
-              hasPendingResult: tabularResult == null,
+              hasPendingResult: widget.tabularResult == null,
             ),
             const SizedBox(height: 20),
 
             // ── 3. Ultrasound finding (if available) ──────────────────────
-            if (ultrasoundAnalysis != null) ...[
-              _UltrasoundFindingCard(result: ultrasoundAnalysis!),
+            if (widget.ultrasoundAnalysis != null) ...[
+              _UltrasoundFindingCard(result: widget.ultrasoundAnalysis!),
               const SizedBox(height: 20),
             ],
 
             // ── 4. Risk score metrics ─────────────────────────────────────
-            if (tabularResult != null) ...[
+            if (widget.tabularResult != null) ...[
               _RiskMetricsRow(
                 riskPct: _riskPct,
                 riskLabel: _riskLabel,
@@ -118,37 +174,41 @@ class ScanResultPage extends StatelessWidget {
             ],
 
             // ── 5. GradCAM heatmap ────────────────────────────────────────
-            if (ultrasoundAnalysis != null && ultrasoundAnalysis!.hasGradcam) ...[
-              _GradCamCard(result: ultrasoundAnalysis!),
+            if (widget.ultrasoundAnalysis != null && widget.ultrasoundAnalysis!.hasGradcam) ...[
+              _GradCamCard(result: widget.ultrasoundAnalysis!),
               const SizedBox(height: 20),
             ],
 
             // ── 6. SHAP feature importance ────────────────────────────────
-            if (tabularResult != null && tabularResult!.shapValues.isNotEmpty) ...[
-              _ShapCard(result: tabularResult!),
+            if (widget.tabularResult != null && widget.tabularResult!.shapValues.isNotEmpty) ...[
+              _ShapCard(result: widget.tabularResult!),
               const SizedBox(height: 20),
             ],
 
             // ── 7. Image validation badges ────────────────────────────────
-            if (mammogramValidation != null || ultrasoundValidation != null) ...[
+            if (widget.mammogramValidation != null || widget.ultrasoundValidation != null) ...[
               _ValidationBadgesRow(
-                mammogramValidation: mammogramValidation,
-                ultrasoundValidation: ultrasoundValidation,
+                mammogramValidation: widget.mammogramValidation,
+                ultrasoundValidation: widget.ultrasoundValidation,
               ),
               const SizedBox(height: 20),
             ],
 
             // ── 8. Uploaded scans ─────────────────────────────────────────
-            if (selectedImagingTypes.isNotEmpty) ...[
+            if (widget.selectedImagingTypes.isNotEmpty) ...[
               _UploadedScansCard(
-                selectedImagingTypes: selectedImagingTypes,
-                uploadedImages: uploadedImages,
+                selectedImagingTypes: widget.selectedImagingTypes,
+                uploadedImages: widget.uploadedImages,
               ),
               const SizedBox(height: 20),
             ],
 
             // ── 9. Clinical recommendations ───────────────────────────────
-            _RecommendationsCard(isHighRisk: _isHighRisk),
+            _PersonalizedRecommendationsCard(
+              patient: widget.selectedPatient,
+              tabularResult: widget.tabularResult,
+              ultrasoundAnalysis: widget.ultrasoundAnalysis,
+            ),
             const SizedBox(height: 20),
 
             // ── 10. Disclaimer ────────────────────────────────────────────
@@ -733,44 +793,86 @@ class _GradCamCard extends StatelessWidget {
   final UltrasoundAnalysisResult result;
   const _GradCamCard({required this.result});
 
+  void _openFullScreen(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _GradCamFullScreen(gradcamBase64: result.gradcamImage),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return _Card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionTitle(
-            title: 'GradCAM — Visual Explanation',
-            icon: Icons.thermostat_rounded,
-            color: const Color(0xFF6C63FF),
+          // Header row — use Flexible to prevent overflow
+          Row(
+            children: [
+              const Icon(Icons.thermostat_rounded, color: Color(0xFF6C63FF), size: 18),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'GradCAM — Visual Explanation',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF6C63FF),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _openFullScreen(context),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6C63FF).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF6C63FF).withOpacity(0.3)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.zoom_in_rounded, size: 14, color: Color(0xFF6C63FF)),
+                      SizedBox(width: 4),
+                      Text('Zoom', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF6C63FF))),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Text(
-            'Heatmap shows which regions of the ultrasound influenced the AI prediction. Red/warm areas = high attention.',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: AppColors.getTextSecondary(context),
-              height: 1.5,
-            ),
+            'Heatmap shows which regions of the ultrasound influenced the AI prediction. Tap to zoom.',
+            style: TextStyle(fontSize: 12.5, color: AppColors.getTextSecondary(context), height: 1.5),
           ),
           const SizedBox(height: 14),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Image.memory(
-              base64Decode(result.gradcamImage),
-              width: double.infinity,
-              fit: BoxFit.cover,
+          GestureDetector(
+            onTap: () => _openFullScreen(context),
+            child: Hero(
+              tag: 'gradcam_image',
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.memory(
+                  base64Decode(result.gradcamImage),
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 12),
-          // Legend
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 16,
             children: [
               _legendDot('Low', const Color(0xFF0000FF)),
-              const SizedBox(width: 16),
               _legendDot('Medium', const Color(0xFF00FF00)),
-              const SizedBox(width: 16),
               _legendDot('High', const Color(0xFFFF0000)),
             ],
           ),
@@ -783,12 +885,113 @@ class _GradCamCard extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 12,
-          height: 12,
+          width: 12, height: 12,
           decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
         ),
         const SizedBox(width: 5),
         Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GradCAM Full Screen Viewer
+// ─────────────────────────────────────────────────────────────────────────────
+class _GradCamFullScreen extends StatefulWidget {
+  final String gradcamBase64;
+  const _GradCamFullScreen({required this.gradcamBase64});
+
+  @override
+  State<_GradCamFullScreen> createState() => _GradCamFullScreenState();
+}
+
+class _GradCamFullScreenState extends State<_GradCamFullScreen> {
+  final TransformationController _controller = TransformationController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.black.withOpacity(0.5),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('GradCAM Heatmap', style: TextStyle(color: Colors.white, fontSize: 16)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+            tooltip: 'Reset zoom',
+            onPressed: () => _controller.value = Matrix4.identity(),
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          // Full screen interactive image
+          Positioned.fill(
+            child: InteractiveViewer(
+              transformationController: _controller,
+              minScale: 0.8,
+              maxScale: 8.0,
+              child: Hero(
+                tag: 'gradcam_image',
+                child: Image.memory(
+                  base64Decode(widget.gradcamBase64),
+                  fit: BoxFit.contain,
+                  width: double.infinity,
+                  height: double.infinity,
+                ),
+              ),
+            ),
+          ),
+          // Bottom legend overlay
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            child: Container(
+              color: Colors.black.withOpacity(0.7),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _dot('Low', const Color(0xFF0000FF)),
+                      const SizedBox(width: 20),
+                      _dot('Medium', const Color(0xFF00FF00)),
+                      const SizedBox(width: 20),
+                      _dot('High', const Color(0xFFFF0000)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Pinch to zoom  •  Drag to pan',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dot(String label, Color color) {
+    return Row(
+      children: [
+        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 11, color: Colors.white70)),
       ],
     );
   }
@@ -1115,7 +1318,172 @@ class _UploadedScansCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. Recommendations Card
+// 9. Personalized Recommendations Card (engine-driven)
+// ─────────────────────────────────────────────────────────────────────────────
+class _PersonalizedRecommendationsCard extends StatelessWidget {
+  final Map<String, dynamic> patient;
+  final TabularPredictionResult? tabularResult;
+  final UltrasoundAnalysisResult? ultrasoundAnalysis;
+
+  const _PersonalizedRecommendationsCard({
+    required this.patient,
+    required this.tabularResult,
+    required this.ultrasoundAnalysis,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final recs = RecommendationEngine.generate(
+      patient: patient,
+      tabularResult: tabularResult,
+      ultrasoundAnalysis: ultrasoundAnalysis,
+    );
+
+    if (recs.isEmpty) return const SizedBox.shrink();
+
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionTitle(
+            title: 'Personalized Recommendations',
+            icon: Icons.fact_check_rounded,
+            color: const Color(0xFF10B981),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Based on your AI results, risk factors, and clinical data',
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.getTextSecondary(context),
+            ),
+          ),
+          const SizedBox(height: 14),
+          ...recs.map((rec) => _RecTileWidget(rec: rec)),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecTileWidget extends StatelessWidget {
+  final Recommendation rec;
+  const _RecTileWidget({required this.rec});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    Color color;
+    switch (rec.priority) {
+      case RecPriority.urgent:
+        color = const Color(0xFFEF4444);
+        break;
+      case RecPriority.high:
+        color = const Color(0xFFF59E0B);
+        break;
+      case RecPriority.medium:
+        color = const Color(0xFF6366F1);
+        break;
+      case RecPriority.low:
+        color = const Color(0xFF10B981);
+        break;
+    }
+
+    String priorityLabel;
+    switch (rec.priority) {
+      case RecPriority.urgent:
+        priorityLabel = 'URGENT';
+        break;
+      case RecPriority.high:
+        priorityLabel = 'HIGH';
+        break;
+      case RecPriority.medium:
+        priorityLabel = 'MEDIUM';
+        break;
+      case RecPriority.low:
+        priorityLabel = 'ROUTINE';
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(isDark ? 0.1 : 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Emoji icon
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Center(
+              child: Text(rec.icon, style: const TextStyle(fontSize: 18)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        rec.title,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.getTextPrimary(context),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        priorityLabel,
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  rec.detail,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.5,
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Old hardcoded card (kept for PDF service compatibility)
 // ─────────────────────────────────────────────────────────────────────────────
 class _RecommendationsCard extends StatelessWidget {
   final bool isHighRisk;
