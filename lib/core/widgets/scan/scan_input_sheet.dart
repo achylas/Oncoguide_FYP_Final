@@ -5,6 +5,7 @@ enum ScanInputType {
   camera,
   gallery,
   report,
+  fromDatabase,
 }
 
 class ScanInputSheet extends StatelessWidget {
@@ -77,6 +78,16 @@ class ScanInputSheet extends StatelessWidget {
             color: AppColors.primary,
             onTap: () {
               Navigator.pop(context, ScanInputType.report);
+            },
+          ),
+
+          _OptionTile(
+            icon: Icons.cloud_download_outlined,
+            title: 'From Patient Records',
+            subtitle: 'Previously uploaded scans',
+            color: const Color(0xFF10B981),
+            onTap: () {
+              Navigator.pop(context, ScanInputType.fromDatabase);
             },
           ),
 

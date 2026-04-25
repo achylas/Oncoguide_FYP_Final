@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:oncoguide_v2/core/pages/new_analysis/screens/analysis_loading_screen.dart';
+import 'package:oncoguide_v2/services/patient_images_service.dart';
 import '../../../conts/colors.dart';
 import '../../../widgets/resuable_top_bar.dart';
 import '../widgets/bottom_cta.dart';
@@ -185,6 +186,8 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen>
                       uploadedFile: uploadedImages[ImagingType.mammogram],
                       onToggle: (file) =>
                           _toggleImaging(ImagingType.mammogram, file),
+                      patientId: selectedPatient?['id']?.toString(),
+                      patientName: selectedPatient?['name']?.toString(),
                     ),
                     const SizedBox(height: 12),
                     ImagingCard(
@@ -203,6 +206,8 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen>
                       uploadedFile: uploadedImages[ImagingType.ultrasound],
                       onToggle: (file) =>
                           _toggleImaging(ImagingType.ultrasound, file),
+                      patientId: selectedPatient?['id']?.toString(),
+                      patientName: selectedPatient?['name']?.toString(),
                     ),
                     const SizedBox(height: 32),
                     LearnMoreSection(
@@ -280,6 +285,21 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen>
         uploadedImages[type] = newFile;
         selectedImaging.add(type);
       });
+
+      // Auto-save image to patient records in background
+      if (selectedPatient != null) {
+        final patientId   = selectedPatient!['id']?.toString() ?? '';
+        final patientName = selectedPatient!['name']?.toString() ?? 'Unknown';
+        final imageType   = type == ImagingType.mammogram ? 'mammogram' : 'ultrasound';
+        if (patientId.isNotEmpty) {
+          PatientImagesService.savePatientImage(
+            patientId: patientId,
+            patientName: patientName,
+            imageFile: newFile,
+            imageType: imageType,
+          ); // fire-and-forget
+        }
+      }
       return;
     }
 

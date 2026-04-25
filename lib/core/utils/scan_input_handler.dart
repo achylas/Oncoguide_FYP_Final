@@ -31,7 +31,10 @@ class ScanInputHandler {
 
       case ScanInputType.report:
         // Placeholder for PDF / file picker
-        // You’ll plug file_picker here later
+        return null;
+
+      case ScanInputType.fromDatabase:
+        // Handled directly in ImagingCard — never reaches here
         return null;
     }
 

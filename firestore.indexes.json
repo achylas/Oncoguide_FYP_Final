@@ -47,6 +47,23 @@
         { "fieldPath": "flaggedBy",  "order": "ASCENDING"  },
         { "fieldPath": "flaggedAt",  "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "patient_images",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "patientId",  "order": "ASCENDING"  },
+        { "fieldPath": "uploadedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "patient_images",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "patientId",  "order": "ASCENDING"  },
+        { "fieldPath": "imageType",  "order": "ASCENDING"  },
+        { "fieldPath": "uploadedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

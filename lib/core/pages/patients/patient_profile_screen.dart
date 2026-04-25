@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:oncoguide_v2/core/conts/colors.dart';
 import 'package:oncoguide_v2/core/pages/history/report_detail_screen.dart';
+import 'package:oncoguide_v2/services/patient_images_service.dart';
 import 'package:oncoguide_v2/core/widgets/resuable_top_bar.dart';
 
 class PatientProfileScreen extends StatefulWidget {
@@ -22,7 +23,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -68,6 +69,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen>
                     Tab(text: 'Clinical Data'),
                     Tab(text: 'Mammogram'),
                     Tab(text: 'Ultrasound'),
+                    Tab(text: 'Images'),
                   ],
                 ),
               ),
@@ -78,6 +80,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen>
                     _ClinicalDataTab(patient: patient),
                     _ReportsTab(patientId: widget.patientId, uid: _uid, collection: 'mammogram_reports', emptyLabel: 'No mammogram reports', icon: Icons.monitor_heart_outlined, color: const Color(0xFFFF6F91)),
                     _ReportsTab(patientId: widget.patientId, uid: _uid, collection: 'ultrasound_reports', emptyLabel: 'No ultrasound reports', icon: Icons.waves_rounded, color: const Color(0xFF6C63FF)),
+                    _PatientImagesTab(patientId: widget.patientId),
                   ],
                 ),
               ),
@@ -387,4 +390,165 @@ class _ReportCard extends StatelessWidget {
     color: color.withOpacity(0.1),
     child: Center(child: Icon(icon, color: color, size: 28)),
   );
+}
+
+// ── Patient Images Tab ────────────────────────────────────────────────────────
+class _PatientImagesTab extends StatelessWidget {
+  final String patientId;
+  const _PatientImagesTab({required this.patientId});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: PatientImagesService.patientImagesStream(patientId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        if (docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.photo_library_outlined,
+                    size: 56,
+                    color: AppColors.getTextSecondary(context).withOpacity(0.3)),
+                const SizedBox(height: 12),
+                Text(
+                  'No images uploaded yet\nfor this patient',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Group by type
+        final mammograms = docs.where((d) => d.data()['imageType'] == 'mammogram').toList();
+        final ultrasounds = docs.where((d) => d.data()['imageType'] == 'ultrasound').toList();
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          children: [
+            if (mammograms.isNotEmpty) ...[
+              _imageGroupHeader(context, 'Mammograms', Icons.monitor_heart_outlined, const Color(0xFFFF6F91)),
+              const SizedBox(height: 10),
+              _imageGrid(context, mammograms, isDark),
+              const SizedBox(height: 20),
+            ],
+            if (ultrasounds.isNotEmpty) ...[
+              _imageGroupHeader(context, 'Ultrasounds', Icons.waves_rounded, const Color(0xFF6C63FF)),
+              const SizedBox(height: 10),
+              _imageGrid(context, ultrasounds, isDark),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _imageGroupHeader(BuildContext context, String label, IconData icon, Color color) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(icon, color: color, size: 16),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: AppColors.getTextPrimary(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _imageGrid(BuildContext context, List<QueryDocumentSnapshot<Map<String, dynamic>>> docs, bool isDark) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.9,
+      ),
+      itemCount: docs.length,
+      itemBuilder: (ctx, i) {
+        final data = docs[i].data();
+        final url  = data['imageUrl']?.toString() ?? '';
+        final ts   = data['uploadedAt'];
+        String dateStr = '';
+        if (ts is Timestamp) {
+          final dt = ts.toDate();
+          dateStr = '${dt.day}/${dt.month}/${dt.year}';
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                  child: url.isNotEmpty
+                      ? Image.network(
+                          url,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: Colors.grey[200],
+                            child: const Icon(Icons.broken_image_rounded, size: 36),
+                          ),
+                        )
+                      : Container(
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.image_outlined, size: 36),
+                        ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(
+                  dateStr,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }

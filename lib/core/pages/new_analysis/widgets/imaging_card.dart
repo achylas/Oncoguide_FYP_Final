@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../utils/scan_input_handler.dart';
 import '../../../widgets/scan/scan_input_sheet.dart';
+import '../../patients/patient_image_picker_screen.dart';
 import '../screens/new_analysis_screen.dart';
 import '../screens/scan_preview_page.dart';
 
@@ -18,6 +19,8 @@ class ImagingCard extends StatelessWidget {
   final bool isDisabled;
   final File? uploadedFile;
   final ValueChanged<File?> onToggle;
+  final String? patientId;
+  final String? patientName;
 
   const ImagingCard({
     super.key,
@@ -30,6 +33,8 @@ class ImagingCard extends StatelessWidget {
     required this.isDisabled,
     required this.uploadedFile,
     required this.onToggle,
+    this.patientId,
+    this.patientName,
   });
 
   @override
@@ -99,6 +104,24 @@ class ImagingCard extends StatelessWidget {
           );
 
           if (selectedType == null) return;
+
+          // Handle "From Patient Records"
+          if (selectedType == ScanInputType.fromDatabase) {
+            if (patientId == null) return;
+            final imageTypeName = type == ImagingType.mammogram ? 'mammogram' : 'ultrasound';
+            final file = await Navigator.push<File?>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PatientImagePickerScreen(
+                  patientId: patientId!,
+                  patientName: patientName ?? 'Patient',
+                  imageType: imageTypeName,
+                ),
+              ),
+            );
+            if (file != null) onToggle(file);
+            return;
+          }
 
           final file =
           await ScanInputHandler.handleInput(context, selectedType);
