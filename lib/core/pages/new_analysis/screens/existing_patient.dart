@@ -37,8 +37,6 @@ class _SelectPatientScreenState extends State<SelectPatientScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
       appBar: ReusableTopBar(
         title: 'New Analysis Screen',

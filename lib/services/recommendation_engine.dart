@@ -46,20 +46,39 @@ class RecommendationEngine {
     final densityIndex  = densityAnalysis?.densityIndex;
     final densityClass  = densityAnalysis?.densityClass ?? '';
 
-    // Patient fields
+    // Patient fields - Demographics
     final age         = (patient['age'] as num?)?.toDouble() ?? 0;
+    final ethnicity   = patient['ethnicity']?.toString() ?? '';
+    
+    // Clinical measurements
     final bmi         = _getDouble(patient, ['imc', 'clinicalAssessment.imc']) ?? 0;
     final weight      = (patient['weight'] as num?)?.toDouble() ?? 0;
+    final vitaminD    = _getDouble(patient, ['vitaminDLevel']) ?? 0;
+    
+    // Family history
     final famHistory  = _getInt(patient, ['familyHistory', 'family_history']) ?? 0;
     final famCount    = _getDouble(patient, ['familyHistoryCount', 'family_history_count']) ?? 0;
     final famDegree   = _getDouble(patient, ['familyHistoryDegree', 'family_history_degree']) ?? 0;
+    
+    // Lifestyle factors
     final exercise    = _getInt(patient, ['exerciseRegular', 'exercise_regular']) ?? 0;
+    final alcoholDrinks = _getDouble(patient, ['alcoholDrinksPerWeek']) ?? 0;
+    final smokingStatus = _getInt(patient, ['smokingStatus']) ?? 0; // 0=never, 1=former, 2=current
+    final dietType    = patient['dietType']?.toString() ?? '';
+    
+    // Reproductive history
     final breastfeed  = _getInt(patient, ['breastfeeding']) ??
         _getIntNested(patient, 'reproductive', 'breastfeeding') ?? 0;
     final children    = _getDouble(patient, ['children']) ??
         _getDoubleNested(patient, 'reproductive', 'numberOfChildren') ?? 0;
     final menopause   = _getInt(patient, ['menopause_status']) ??
         _getIntNested(patient, 'reproductive', 'menopauseStatus') ?? 0;
+    
+    // Contraceptive & HRT
+    final oralContraceptive = _getInt(patient, ['oralContraceptiveUse']) ?? 0;
+    final oralContraceptiveYears = _getDouble(patient, ['oralContraceptiveYears']) ?? 0;
+    final hrtUse      = _getInt(patient, ['hrtUse']) ?? 0;
+    final hrtType     = patient['hrtType']?.toString() ?? '';
 
     // Top SHAP factors (sorted by absolute impact)
     final topShap = shap.entries.toList()
@@ -84,6 +103,17 @@ class RecommendationEngine {
       ));
     }
 
+    // ── RACE/ETHNICITY-BASED: Early screening for Black women ─────────────────
+    if ((ethnicity.toLowerCase().contains('black') || ethnicity.toLowerCase().contains('african')) && age >= 25 && age < 40) {
+      recs.add(Recommendation(
+        title: 'Early Risk Assessment Recommended',
+        detail: 'ACR 2023 guidelines recommend breast cancer risk assessment by age 25 for Black women due to 40% higher mortality rates and earlier onset. Schedule comprehensive risk evaluation.',
+        priority: RecPriority.high,
+        category: RecCategory.clinical,
+        icon: '🩺',
+      ));
+    }
+
     // ── HIGH RISK from RF model ───────────────────────────────────────────────
     if (isHighRisk) {
       recs.add(Recommendation(
@@ -96,7 +126,7 @@ class RecommendationEngine {
 
       recs.add(Recommendation(
         title: 'Contrast-Enhanced MRI',
-        detail: 'High risk score warrants contrast-enhanced MRI for detailed staging and to assess extent of disease.',
+        detail: 'High risk score warrants contrast-enhanced MRI for detailed staging and to assess extent of disease. MRI is the most sensitive imaging modality for high-risk patients.',
         priority: RecPriority.high,
         category: RecCategory.imaging,
         icon: '🧲',
@@ -108,6 +138,46 @@ class RecommendationEngine {
         priority: RecPriority.medium,
         category: RecCategory.clinical,
         icon: '👥',
+      ));
+    }
+
+    // ── LIFESTYLE: Smoking cessation ──────────────────────────────────────────
+    if (smokingStatus == 2) { // Current smoker
+      recs.add(Recommendation(
+        title: 'Smoking Cessation Program',
+        detail: 'Active smoking increases breast cancer risk by 10-20% and significantly worsens treatment outcomes. Immediate referral to smoking cessation program is strongly recommended.',
+        priority: RecPriority.high,
+        category: RecCategory.lifestyle,
+        icon: '🚭',
+      ));
+    } else if (smokingStatus == 1 && isHighRisk) { // Former smoker with high risk
+      recs.add(Recommendation(
+        title: 'Former Smoker - Enhanced Monitoring',
+        detail: 'History of smoking combined with high risk score warrants closer monitoring. Ensure annual screening compliance.',
+        priority: RecPriority.medium,
+        category: RecCategory.monitoring,
+        icon: '🚭',
+      ));
+    }
+
+    // ── LIFESTYLE: Alcohol consumption ────────────────────────────────────────
+    if (alcoholDrinks >= 7) { // 1+ drinks per day
+      final drinksPerDay = alcoholDrinks / 7;
+      final riskIncrease = (drinksPerDay * 10).toStringAsFixed(0);
+      recs.add(Recommendation(
+        title: 'Reduce Alcohol Consumption',
+        detail: 'Current alcohol intake (${drinksPerDay.toStringAsFixed(1)} drinks/day) increases breast cancer risk by approximately $riskIncrease%. WHO recommends limiting to <3 drinks per week.',
+        priority: RecPriority.high,
+        category: RecCategory.lifestyle,
+        icon: '🍷',
+      ));
+    } else if (alcoholDrinks >= 3 && alcoholDrinks < 7) {
+      recs.add(Recommendation(
+        title: 'Moderate Alcohol Intake',
+        detail: 'Current alcohol consumption (${alcoholDrinks.toStringAsFixed(0)} drinks/week) is moderate. Consider reducing further as even moderate intake increases breast cancer risk.',
+        priority: RecPriority.medium,
+        category: RecCategory.lifestyle,
+        icon: '🍷',
       ));
     }
 
@@ -160,6 +230,36 @@ class RecommendationEngine {
       ));
     }
 
+    // ── LIFESTYLE: Vitamin D deficiency ───────────────────────────────────────
+    if (vitaminD > 0 && vitaminD < 20) { // Deficient
+      recs.add(Recommendation(
+        title: 'Vitamin D Supplementation',
+        detail: 'Vitamin D level of ${vitaminD.toStringAsFixed(1)} ng/mL is deficient. Studies suggest adequate vitamin D (>30 ng/mL) may reduce breast cancer risk. Discuss supplementation (1000-2000 IU daily) with your physician.',
+        priority: RecPriority.medium,
+        category: RecCategory.lifestyle,
+        icon: '☀️',
+      ));
+    } else if (vitaminD >= 20 && vitaminD < 30) { // Insufficient
+      recs.add(Recommendation(
+        title: 'Optimize Vitamin D Levels',
+        detail: 'Vitamin D level of ${vitaminD.toStringAsFixed(1)} ng/mL is insufficient. Target level is >30 ng/mL. Consider supplementation and increased sun exposure.',
+        priority: RecPriority.low,
+        category: RecCategory.lifestyle,
+        icon: '☀️',
+      ));
+    }
+
+    // ── LIFESTYLE: Mediterranean diet recommendation ──────────────────────────
+    if ((isHighRisk || bmi > 25) && !dietType.toLowerCase().contains('mediterranean')) {
+      recs.add(Recommendation(
+        title: 'Mediterranean Diet Consultation',
+        detail: 'Mediterranean diet (high in vegetables, fruits, whole grains, olive oil, fish) has been shown to reduce breast cancer risk by 20-30%. Nutritionist consultation recommended.',
+        priority: isHighRisk ? RecPriority.high : RecPriority.medium,
+        category: RecCategory.lifestyle,
+        icon: '🥗',
+      ));
+    }
+
     // ── Exercise recommendation ───────────────────────────────────────────────
     if (exercise == 0) {
       final shapImpact = shap['exercise_regular'];
@@ -175,19 +275,16 @@ class RecommendationEngine {
       ));
     }
 
-    // ── Age-based screening ───────────────────────────────────────────────────
-    if (age >= 40 && age < 50) {
+    // ── Age-based screening (USPSTF 2024 Guidelines) ──────────────────────────
+    if (age >= 40 && age <= 74) {
+      final interval = isHighRisk ? 'annual' : 'biennial (every 2 years)';
+      final intervalDetail = isHighRisk 
+          ? 'High-risk patients should undergo annual screening.'
+          : 'USPSTF 2024 guidelines recommend screening every 2 years for average-risk women.';
+      
       recs.add(Recommendation(
-        title: 'Annual Mammogram Screening',
-        detail: 'At age ${age.toInt()}, annual mammogram screening is recommended. Early detection significantly improves outcomes.',
-        priority: isHighRisk ? RecPriority.high : RecPriority.medium,
-        category: RecCategory.imaging,
-        icon: '📷',
-      ));
-    } else if (age >= 50) {
-      recs.add(Recommendation(
-        title: 'Biennial Mammogram + Clinical Exam',
-        detail: 'At age ${age.toInt()}, mammogram every 1–2 years combined with clinical breast exam is standard of care.',
+        title: '${isHighRisk ? "Annual" : "Biennial"} Mammogram Screening',
+        detail: 'At age ${age.toInt()}, $interval mammogram screening is recommended. $intervalDetail Early detection significantly improves outcomes.',
         priority: isHighRisk ? RecPriority.high : RecPriority.medium,
         category: RecCategory.imaging,
         icon: '📷',
@@ -195,19 +292,58 @@ class RecommendationEngine {
     } else if (age < 40 && isHighRisk) {
       recs.add(Recommendation(
         title: 'Early Screening Recommended',
-        detail: 'Despite age ${age.toInt()}, high risk score warrants earlier screening. Discuss MRI or ultrasound-based screening with your physician.',
+        detail: 'Despite age ${age.toInt()}, high risk score warrants earlier screening. Discuss MRI or ultrasound-based screening with your physician. ACR recommends starting at age 30 for high-risk patients.',
         priority: RecPriority.high,
+        category: RecCategory.imaging,
+        icon: '📷',
+      ));
+    } else if (age > 74 && isHighRisk) {
+      recs.add(Recommendation(
+        title: 'Individualized Screening Decision',
+        detail: 'At age ${age.toInt()}, screening decisions should be individualized based on health status and life expectancy. Discuss continued screening with your physician.',
+        priority: RecPriority.medium,
         category: RecCategory.imaging,
         icon: '📷',
       ));
     }
 
-    // ── Menopause-related ─────────────────────────────────────────────────────
-    if (menopause == 1 && isHighRisk) {
+    // ── Menopause-related & HRT ───────────────────────────────────────────────
+    if (menopause == 1 && hrtUse == 1) {
+      final hrtDetail = hrtType.toLowerCase().contains('combined') 
+          ? 'Combined estrogen-progestin HRT significantly increases breast cancer risk.'
+          : 'Hormone replacement therapy may increase breast cancer risk.';
+      
       recs.add(Recommendation(
         title: 'Review Hormone Therapy',
-        detail: 'Post-menopausal status combined with high risk score — review any hormone replacement therapy with your physician as it may increase risk.',
+        detail: 'Post-menopausal status with active HRT use${isHighRisk ? " and high risk score" : ""}. $hrtDetail Discuss risks/benefits and alternatives with your physician.',
+        priority: isHighRisk ? RecPriority.high : RecPriority.medium,
+        category: RecCategory.clinical,
+        icon: '💊',
+      ));
+    } else if (menopause == 1 && isHighRisk && hrtUse == 0) {
+      recs.add(Recommendation(
+        title: 'Avoid Hormone Replacement Therapy',
+        detail: 'Post-menopausal status with high risk score. Avoid hormone replacement therapy if possible. Discuss non-hormonal alternatives for menopausal symptoms.',
         priority: RecPriority.medium,
+        category: RecCategory.clinical,
+        icon: '💊',
+      ));
+    }
+
+    // ── Contraceptive use ─────────────────────────────────────────────────────
+    if (oralContraceptive == 1 && oralContraceptiveYears > 5 && isHighRisk) {
+      recs.add(Recommendation(
+        title: 'Review Contraceptive Options',
+        detail: 'Long-term oral contraceptive use (${oralContraceptiveYears.toInt()} years) combined with high risk score. Combined oral contraceptives slightly increase breast cancer risk during use. Discuss alternative contraceptive methods with your gynecologist.',
+        priority: RecPriority.medium,
+        category: RecCategory.clinical,
+        icon: '💊',
+      ));
+    } else if (oralContraceptive == 1 && oralContraceptiveYears > 10) {
+      recs.add(Recommendation(
+        title: 'Long-term Contraceptive Use',
+        detail: 'Oral contraceptive use for ${oralContraceptiveYears.toInt()} years. While risk increase is small, consider discussing alternatives with your gynecologist at your next visit.',
+        priority: RecPriority.low,
         category: RecCategory.clinical,
         icon: '💊',
       ));
@@ -226,48 +362,73 @@ class RecommendationEngine {
 
     // ── Benign ultrasound ─────────────────────────────────────────────────────
     if (usPrediction == 'Benign') {
+      final followUpDetail = usConfidence >= 95
+          ? 'Follow-up ultrasound in 6 months, then annually if stable for 2 years (BI-RADS 3 protocol).'
+          : 'Follow-up ultrasound in 6 months to monitor for changes. Consider biopsy if confidence is lower or changes occur.';
+      
       recs.add(Recommendation(
-        title: 'Benign Mass — Monitor',
-        detail: 'Ultrasound shows benign characteristics (${usConfidence.toStringAsFixed(0)}% confidence). Follow-up ultrasound in 6 months to monitor for changes.',
+        title: 'Benign Mass — Short-Interval Follow-Up',
+        detail: 'Ultrasound shows benign characteristics (${usConfidence.toStringAsFixed(0)}% confidence). $followUpDetail',
         priority: RecPriority.medium,
         category: RecCategory.monitoring,
         icon: '🔍',
       ));
     }
 
-    // ── Density-driven recommendations ───────────────────────────────────────
+    // ── Density-driven recommendations (ACR 2024) ────────────────────────────
     if (densityAnalysis != null) {
       if (densityIndex == 3) {
         // Density D — extremely dense, significantly limits mammography
-        recs.add(Recommendation(
-          title: 'Supplemental MRI Recommended',
-          detail: '$densityClass detected. Extremely dense tissue significantly reduces mammography sensitivity. Contrast-enhanced MRI or whole-breast ultrasound is strongly recommended as a supplement.',
-          priority: isHighRisk ? RecPriority.high : RecPriority.medium,
-          category: RecCategory.imaging,
-          icon: '🧲',
-        ));
+        if (isHighRisk || famHistory == 1) {
+          recs.add(Recommendation(
+            title: 'Annual Breast MRI Required',
+            detail: '$densityClass detected with high-risk profile. Extremely dense tissue significantly reduces mammography sensitivity. Annual contrast-enhanced MRI is strongly recommended per ACR 2024 guidelines.',
+            priority: RecPriority.high,
+            category: RecCategory.imaging,
+            icon: '🧲',
+          ));
+        } else {
+          recs.add(Recommendation(
+            title: 'Supplemental Screening Recommended',
+            detail: '$densityClass detected. Extremely dense tissue significantly reduces mammography sensitivity. Supplemental whole-breast ultrasound or contrast-enhanced MRI is recommended.',
+            priority: RecPriority.medium,
+            category: RecCategory.imaging,
+            icon: '🧲',
+          ));
+        }
+        
         recs.add(Recommendation(
           title: 'Inform Patient of Dense Tissue',
-          detail: 'Patients with extremely dense breasts (Density D) should be informed that mammography alone may miss up to 40% of cancers. Discuss supplemental screening options.',
+          detail: 'Patients with extremely dense breasts (Density D) should be informed that mammography alone may miss up to 40% of cancers. Supplemental screening is essential.',
           priority: RecPriority.medium,
           category: RecCategory.clinical,
           icon: '💬',
         ));
       } else if (densityIndex == 2) {
         // Density C — heterogeneous, may obscure small masses
-        recs.add(Recommendation(
-          title: 'Consider Supplemental Ultrasound',
-          detail: '$densityClass detected. Heterogeneously dense tissue may obscure small masses on mammography. Supplemental whole-breast ultrasound is recommended, especially given ${isHighRisk ? "high risk score" : "clinical context"}.',
-          priority: isHighRisk ? RecPriority.high : RecPriority.medium,
-          category: RecCategory.imaging,
-          icon: '🔊',
-        ));
+        if (isHighRisk || famHistory == 1) {
+          recs.add(Recommendation(
+            title: 'Supplemental MRI or Ultrasound',
+            detail: '$densityClass detected with high-risk profile. Heterogeneously dense tissue may obscure small masses. Supplemental breast MRI (preferred) or whole-breast ultrasound is recommended per ACR 2024 guidelines.',
+            priority: RecPriority.high,
+            category: RecCategory.imaging,
+            icon: '🧲',
+          ));
+        } else {
+          recs.add(Recommendation(
+            title: 'Consider Supplemental Ultrasound',
+            detail: '$densityClass detected. Heterogeneously dense tissue may obscure small masses on mammography. Supplemental whole-breast ultrasound may be beneficial. Discuss with your physician.',
+            priority: RecPriority.medium,
+            category: RecCategory.imaging,
+            icon: '🔊',
+          ));
+        }
       }
       // Density A or B — no additional imaging needed, but note it
       if (densityIndex != null && densityIndex <= 1 && !isHighRisk) {
         recs.add(Recommendation(
           title: 'Favorable Tissue Density',
-          detail: '$densityClass — mammography has high sensitivity for this tissue type. Standard annual screening schedule is appropriate.',
+          detail: '$densityClass — mammography has high sensitivity for this tissue type. Standard screening schedule (biennial for average risk, annual for high risk) is appropriate.',
           priority: RecPriority.low,
           category: RecCategory.monitoring,
           icon: '✅',
@@ -277,9 +438,10 @@ class RecommendationEngine {
 
     // ── Normal / Low risk ─────────────────────────────────────────────────────
     if (!isHighRisk && usPrediction != 'Malignant') {
+      final screeningInterval = (age >= 40 && age <= 74) ? 'biennial (every 2 years)' : 'annual';
       recs.add(Recommendation(
         title: 'Routine Follow-Up',
-        detail: 'Low risk profile detected. Schedule next screening in 12 months or sooner if new symptoms arise (lump, skin changes, nipple discharge).',
+        detail: 'Low risk profile detected. Continue $screeningInterval screening per USPSTF 2024 guidelines. Contact physician immediately if new symptoms arise (lump, skin changes, nipple discharge, pain).',
         priority: RecPriority.low,
         category: RecCategory.monitoring,
         icon: '📅',
@@ -361,6 +523,12 @@ class RecommendationEngine {
       'family_history_count': 'Family History Count',
       'family_history_degree': 'Family History Degree',
       'exercise_regular': 'Regular Exercise',
+      'alcoholDrinksPerWeek': 'Alcohol Consumption',
+      'smokingStatus': 'Smoking Status',
+      'vitaminDLevel': 'Vitamin D Level',
+      'oralContraceptiveUse': 'Oral Contraceptive Use',
+      'oralContraceptiveYears': 'Oral Contraceptive Duration',
+      'hrtUse': 'Hormone Replacement Therapy',
     };
     return labels[key] ?? key;
   }

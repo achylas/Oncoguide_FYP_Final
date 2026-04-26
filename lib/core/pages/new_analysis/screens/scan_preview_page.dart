@@ -30,8 +30,6 @@ class _ScanPreviewPageState extends State<ScanPreviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
       appBar: const CommonTopBar(title: 'Scan Preview'),
       backgroundColor: AppColors.getBackground(context),

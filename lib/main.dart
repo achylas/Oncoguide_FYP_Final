@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:oncoguide_v2/core/pages/all_patients/all_patients.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User, Session, AuthState, AuthChangeEvent;
 
 import 'core/conts/theme.dart';
 import 'core/pages/auth/login.dart';
 import 'core/pages/history/scan_history_screen.dart';
 import 'core/pages/new_analysis/screens/new_analysis_screen.dart';
+import 'core/pages/onboarding/onboarding_screen.dart';
 import 'core/pages/patients/patients_hub_screen.dart';
 import 'core/pages/quickaccess/addpatient.dart';
 import 'core/utils/nav_bar.dart';
@@ -102,6 +104,7 @@ class _LandingPageState extends State<LandingPage>
   late AnimationController _textController;
   late Animation<Offset> _textSlideAnimation;
   late Animation<double> _textFadeAnimation;
+  bool _isCheckingOnboarding = true;
 
   @override
   void initState() {
@@ -125,9 +128,30 @@ class _LandingPageState extends State<LandingPage>
 
     _textController.forward();
 
-    // Navigate to login after 9 seconds
-    Future.delayed(const Duration(seconds: 9), () {
-      Navigator.pushReplacementNamed(context, '/login');
+    // Check if onboarding has been completed
+    _checkOnboardingStatus();
+  }
+
+  Future<void> _checkOnboardingStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final onboardingComplete = prefs.getBool('onboarding_complete') ?? false;
+
+    setState(() {
+      _isCheckingOnboarding = false;
+    });
+
+    // Navigate after splash animation
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        if (onboardingComplete) {
+          Navigator.pushReplacementNamed(context, '/login');
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+          );
+        }
+      }
     });
   }
 

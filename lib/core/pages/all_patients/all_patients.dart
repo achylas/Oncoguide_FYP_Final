@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../conts/colors.dart';
 import '../../widgets/resuable_top_bar.dart';
-import '../history/report_detail_screen.dart';
 import '../new_analysis/screens/existing_patient.dart';
 
 class AllPatientsScreen extends StatefulWidget {
@@ -60,8 +59,6 @@ class _AllPatientsScreenState extends State<AllPatientsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
       backgroundColor: AppColors.getBackground(context),
       appBar: ReusableTopBar(
