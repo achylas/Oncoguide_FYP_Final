@@ -182,6 +182,53 @@ class ApiService {
   }
 
   // ─────────────────────────────────────────────
+  // Density analysis (Siamese CC + MLO)
+  // ─────────────────────────────────────────────
+
+  /// Sends CC and MLO mammogram views to the Siamese density model.
+  /// Returns [DensityAnalysisResult] with BI-RADS A–D classification.
+  static Future<DensityAnalysisResult> analyzeDensity({
+    required File ccFile,
+    required File mloFile,
+  }) async {
+    final uri     = Uri.parse('$_baseUrl/analyze/density');
+    final request = http.MultipartRequest('POST', uri);
+
+    String _ext(File f) => f.path.split('.').last.toLowerCase();
+    MediaType _ct(File f) =>
+        MediaType('image', _ext(f) == 'png' ? 'png' : 'jpeg');
+
+    request.files.add(
+      await http.MultipartFile.fromPath(
+        'cc_file',
+        ccFile.path,
+        contentType: _ct(ccFile),
+      ),
+    );
+    request.files.add(
+      await http.MultipartFile.fromPath(
+        'mlo_file',
+        mloFile.path,
+        contentType: _ct(mloFile),
+      ),
+    );
+
+    final streamedResponse =
+        await request.send().timeout(const Duration(seconds: 60));
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return DensityAnalysisResult.fromJson(json);
+    } else {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: _extractDetail(response.body),
+      );
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // Health check
   // ─────────────────────────────────────────────
   static Future<bool> isServerReachable() async {
@@ -290,4 +337,55 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException($statusCode): $message';
+}
+
+/// Result from the Siamese density model (CC + MLO views).
+class DensityAnalysisResult {
+  /// Full label e.g. "Density B (Scattered)"
+  final String densityClass;
+  /// Short label e.g. "B - Scattered"
+  final String densityLabel;
+  /// 0=A (Fatty), 1=B (Scattered), 2=C (Heterogeneous), 3=D (Extremely Dense)
+  final int densityIndex;
+  /// Confidence 0–100
+  final double confidence;
+  /// Per-class probabilities
+  final Map<String, double> probabilities;
+  /// Base64-encoded PNG GradCAM overlay of the CC view
+  final String gradcamImage;
+
+  const DensityAnalysisResult({
+    required this.densityClass,
+    required this.densityLabel,
+    required this.densityIndex,
+    required this.confidence,
+    required this.probabilities,
+    required this.gradcamImage,
+  });
+
+  factory DensityAnalysisResult.fromJson(Map<String, dynamic> json) {
+    final rawProbs = json['probabilities'] as Map<String, dynamic>? ?? {};
+    return DensityAnalysisResult(
+      densityClass:  json['density_class']  as String,
+      densityLabel:  json['density_label']  as String,
+      densityIndex:  json['density_index']  as int,
+      confidence:    (json['confidence']    as num).toDouble(),
+      probabilities: rawProbs.map((k, v) => MapEntry(k, (v as num).toDouble())),
+      gradcamImage:  json['gradcam_image']  as String? ?? '',
+    );
+  }
+
+  bool get isHighDensity => densityIndex >= 2;   // C or D
+  bool get hasGradcam    => gradcamImage.isNotEmpty;
+
+  /// Clinical interpretation for the density class.
+  String get clinicalNote {
+    switch (densityIndex) {
+      case 0: return 'Fatty tissue — highest sensitivity for mammography.';
+      case 1: return 'Scattered fibroglandular — generally good sensitivity.';
+      case 2: return 'Heterogeneous dense — may obscure small masses.';
+      case 3: return 'Extremely dense — significantly reduces mammography sensitivity.';
+      default: return '';
+    }
+  }
 }

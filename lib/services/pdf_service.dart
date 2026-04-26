@@ -159,10 +159,33 @@ class PdfService {
         gradcamImage: '',
       );
     }
+
+    // Reconstruct density result from saved Firestore fields (if present)
+    DensityAnalysisResult? densityResult;
+    final densityIndex = (data['densityIndex'] as num?)?.toInt();
+    final densityClass = data['densityClass'] as String?;
+    final densityLabel = data['densityLabel'] as String?;
+    final densityConf  = (data['densityConfidence'] as num?)?.toDouble();
+    if (densityIndex != null && densityClass != null && densityLabel != null) {
+      final densityProbRaw = data['densityProbabilities'];
+      final densityProbs = densityProbRaw is Map
+          ? densityProbRaw.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()))
+          : <String, double>{};
+      densityResult = DensityAnalysisResult(
+        densityClass: densityClass,
+        densityLabel: densityLabel,
+        densityIndex: densityIndex,
+        confidence: densityConf ?? 0.0,
+        probabilities: densityProbs,
+        gradcamImage: '',
+      );
+    }
+
     final recs = RecommendationEngine.generate(
       patient: data,
       tabularResult: tabResult,
       ultrasoundAnalysis: usResult,
+      densityAnalysis: densityResult,
     );
 
     // ── Shared text styles ────────────────────────────────────────────────────

@@ -30,6 +30,7 @@ class ReportService {
     required MammogramValidationResult? mammogramValidation,
     required MammogramValidationResult? ultrasoundValidation,
     required UltrasoundAnalysisResult? ultrasoundAnalysis,
+    DensityAnalysisResult? densityAnalysis,
   }) async {
     try {
       final uid       = _auth.currentUser?.uid ?? 'anonymous';
@@ -84,6 +85,7 @@ class ReportService {
           mammogramValidation: mammogramValidation,
           tabularResult: tabularResult,
           mammogramUrl: mammogramUrl,
+          densityAnalysis: densityAnalysis,
         );
       }
 
@@ -149,6 +151,7 @@ class ReportService {
     required MammogramValidationResult? mammogramValidation,
     required TabularPredictionResult? tabularResult,
     required String? mammogramUrl,
+    DensityAnalysisResult? densityAnalysis,
   }) async {
     final doc = _clean({
       'reportId'       : reportId,
@@ -167,6 +170,12 @@ class ReportService {
       'baseValue'      : tabularResult?.baseValue,
       // Image
       'mammogramUrl'   : mammogramUrl,
+      // Density model (if CC + MLO were both uploaded)
+      'densityClass'   : densityAnalysis?.densityClass,
+      'densityLabel'   : densityAnalysis?.densityLabel,
+      'densityIndex'   : densityAnalysis?.densityIndex,
+      'densityConfidence'    : densityAnalysis?.confidence,
+      'densityProbabilities' : densityAnalysis?.probabilities,
     });
 
     final ref = await _db.collection('mammogram_reports').add(doc);

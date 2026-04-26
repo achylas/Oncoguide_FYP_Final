@@ -23,7 +23,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -67,6 +67,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen>
                   labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                   tabs: const [
                     Tab(text: 'Clinical Data'),
+                    Tab(text: 'Reports'),
                     Tab(text: 'Mammogram'),
                     Tab(text: 'Ultrasound'),
                     Tab(text: 'Images'),
@@ -78,6 +79,7 @@ class _PatientProfileScreenState extends State<PatientProfileScreen>
                   controller: _tabController,
                   children: [
                     _ClinicalDataTab(patient: patient),
+                    _AllReportsTab(patientId: widget.patientId),
                     _ReportsTab(patientId: widget.patientId, uid: _uid, collection: 'mammogram_reports', emptyLabel: 'No mammogram reports', icon: Icons.monitor_heart_outlined, color: const Color(0xFFFF6F91)),
                     _ReportsTab(patientId: widget.patientId, uid: _uid, collection: 'ultrasound_reports', emptyLabel: 'No ultrasound reports', icon: Icons.waves_rounded, color: const Color(0xFF6C63FF)),
                     _PatientImagesTab(patientId: widget.patientId),
@@ -237,6 +239,84 @@ class _ClinicalDataTab extends StatelessWidget {
   }
 }
 
+// ── All Reports Tab (merged mammogram + ultrasound, newest first) ─────────────
+class _AllReportsTab extends StatelessWidget {
+  final String patientId;
+  const _AllReportsTab({required this.patientId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('mammogram_reports')
+          .where('patientId', isEqualTo: patientId)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, mammoSnap) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('ultrasound_reports')
+              .where('patientId', isEqualTo: patientId)
+              .orderBy('createdAt', descending: true)
+              .snapshots(),
+          builder: (context, usSnap) {
+            if (mammoSnap.connectionState == ConnectionState.waiting ||
+                usSnap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final all = [
+              ...(mammoSnap.data?.docs ?? []).map((d) => {'id': d.id, 'type': 'mammogram', ...d.data()}),
+              ...(usSnap.data?.docs ?? []).map((d) => {'id': d.id, 'type': 'ultrasound', ...d.data()}),
+            ];
+
+            all.sort((a, b) {
+              final ta = a['createdAt'];
+              final tb = b['createdAt'];
+              if (ta is Timestamp && tb is Timestamp) return tb.compareTo(ta);
+              return 0;
+            });
+
+            if (all.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.history_rounded, size: 48,
+                        color: AppColors.getTextSecondary(context).withOpacity(0.3)),
+                    const SizedBox(height: 12),
+                    Text('No reports yet',
+                        style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(context))),
+                  ],
+                ),
+              );
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              itemCount: all.length,
+              itemBuilder: (ctx, i) {
+                final data = all[i];
+                final isLatest = i == 0;
+                return _ReportCard(
+                  data: data,
+                  color: data['type'] == 'mammogram'
+                      ? const Color(0xFFFF6F91)
+                      : const Color(0xFF6C63FF),
+                  icon: data['type'] == 'mammogram'
+                      ? Icons.monitor_heart_outlined
+                      : Icons.waves_rounded,
+                  isLatest: isLatest,
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 // ── Reports Tab ───────────────────────────────────────────────────────────────
 class _ReportsTab extends StatelessWidget {
   final String patientId;
@@ -299,19 +379,28 @@ class _ReportCard extends StatelessWidget {
   final Map<String, dynamic> data;
   final Color color;
   final IconData icon;
-  const _ReportCard({required this.data, required this.color, required this.icon});
+  final bool isLatest;
+  const _ReportCard({required this.data, required this.color, required this.icon, this.isLatest = false});
 
   @override
   Widget build(BuildContext context) {
     final isDark      = Theme.of(context).brightness == Brightness.dark;
     final riskLabel   = data['riskLabel']?.toString() ?? '';
     final riskPct     = (data['riskPercentage'] as num?)?.toDouble() ?? 0.0;
-    final prediction  = data['prediction']?.toString();
+    // usPrediction is the primary field; fall back to prediction
+    final prediction  = data['usPrediction']?.toString() ?? data['prediction']?.toString();
     final imageUrl    = data['mammogramUrl']?.toString() ?? data['ultrasoundUrl']?.toString();
     final isHighRisk  = riskLabel == 'High Risk';
     final isMalignant = prediction == 'Malignant';
-    final badgeColor  = isMalignant ? const Color(0xFFEF4444) : isHighRisk ? const Color(0xFFF59E0B) : const Color(0xFF10B981);
-    final badgeText   = isMalignant ? 'Malignant' : isHighRisk ? 'High Risk' : prediction ?? riskLabel;
+    final isBenign    = prediction == 'Benign';
+    final badgeColor  = isMalignant
+        ? const Color(0xFFEF4444)
+        : isBenign
+            ? const Color(0xFFF59E0B)
+            : isHighRisk
+                ? const Color(0xFFEF4444)
+                : const Color(0xFF10B981);
+    final badgeText   = prediction ?? (isHighRisk ? 'High Risk' : riskLabel.isNotEmpty ? riskLabel : 'Low Risk');
 
     String dateStr = '';
     final ts = data['createdAt'];
@@ -327,6 +416,9 @@ class _ReportCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
           borderRadius: BorderRadius.circular(16),
+          border: isLatest
+              ? Border.all(color: color.withOpacity(0.5), width: 1.5)
+              : null,
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(isDark ? 0.2 : 0.05), blurRadius: 10, offset: const Offset(0, 3))],
         ),
         child: Row(
@@ -351,9 +443,19 @@ class _ReportCard extends StatelessWidget {
                       children: [
                         Icon(icon, size: 13, color: color),
                         const SizedBox(width: 4),
-                        Text(data['type'] == 'mammogram' ? 'Mammogram Report' : 'Ultrasound Report',
+                        Text(data['type'] == 'mammogram' ? 'Mammogram' : 'Ultrasound',
                             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
                         const Spacer(),
+                        if (isLatest)
+                          Container(
+                            margin: const EdgeInsets.only(right: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: Text('Latest', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+                          ),
                         Text(dateStr, style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
                       ],
                     ),

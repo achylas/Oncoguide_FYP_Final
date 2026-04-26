@@ -24,6 +24,7 @@ COPY rf_breast_cancer.pkl .
 COPY gatekeeper_best_v3.pth.zip .
 COPY us_gatekeeper.pt.zip .
 COPY us_analysis.pth.zip .
+COPY density_model.pth.zip .
 
 # Expose port 7860 (HuggingFace default)
 EXPOSE 7860

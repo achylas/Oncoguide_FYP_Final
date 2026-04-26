@@ -66,14 +66,18 @@ class PatientImagesService {
   }
 
   /// Get all images of a specific type for a patient.
-  static Stream<QuerySnapshot<Map<String, dynamic>>> patientImagesByType(
+  /// Filters client-side to avoid requiring a composite Firestore index.
+  static Stream<List<Map<String, dynamic>>> patientImagesByType(
       String patientId, String imageType) {
     return _db
         .collection('patient_images')
         .where('patientId', isEqualTo: patientId)
-        .where('imageType', isEqualTo: imageType)
         .orderBy('uploadedAt', descending: true)
-        .snapshots();
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data()})
+            .where((d) => d['imageType'] == imageType)
+            .toList());
   }
 
   /// Delete a patient image record from Firestore.

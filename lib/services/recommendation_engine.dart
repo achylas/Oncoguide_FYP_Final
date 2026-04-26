@@ -26,6 +26,7 @@ class Recommendation {
 /// Generates personalized clinical recommendations based on:
 ///   - RF model output (risk %, SHAP values)
 ///   - Ultrasound model output (Benign/Normal/Malignant)
+///   - Density model output (BI-RADS A–D)
 ///   - Patient demographics and clinical data
 class RecommendationEngine {
 
@@ -33,14 +34,17 @@ class RecommendationEngine {
     required Map<String, dynamic> patient,
     required TabularPredictionResult? tabularResult,
     required UltrasoundAnalysisResult? ultrasoundAnalysis,
+    DensityAnalysisResult? densityAnalysis,
   }) {
     final recs = <Recommendation>[];
 
-    final isHighRisk   = tabularResult?.prediction == 1;
-    final riskPct      = tabularResult?.riskPercentage ?? 0.0;
-    final shap         = tabularResult?.shapValues ?? {};
-    final usPrediction = ultrasoundAnalysis?.prediction;
-    final usConfidence = ultrasoundAnalysis?.confidence ?? 0.0;
+    final isHighRisk    = tabularResult?.prediction == 1;
+    final riskPct       = tabularResult?.riskPercentage ?? 0.0;
+    final shap          = tabularResult?.shapValues ?? {};
+    final usPrediction  = ultrasoundAnalysis?.prediction;
+    final usConfidence  = ultrasoundAnalysis?.confidence ?? 0.0;
+    final densityIndex  = densityAnalysis?.densityIndex;
+    final densityClass  = densityAnalysis?.densityClass ?? '';
 
     // Patient fields
     final age         = (patient['age'] as num?)?.toDouble() ?? 0;
@@ -229,6 +233,46 @@ class RecommendationEngine {
         category: RecCategory.monitoring,
         icon: '🔍',
       ));
+    }
+
+    // ── Density-driven recommendations ───────────────────────────────────────
+    if (densityAnalysis != null) {
+      if (densityIndex == 3) {
+        // Density D — extremely dense, significantly limits mammography
+        recs.add(Recommendation(
+          title: 'Supplemental MRI Recommended',
+          detail: '$densityClass detected. Extremely dense tissue significantly reduces mammography sensitivity. Contrast-enhanced MRI or whole-breast ultrasound is strongly recommended as a supplement.',
+          priority: isHighRisk ? RecPriority.high : RecPriority.medium,
+          category: RecCategory.imaging,
+          icon: '🧲',
+        ));
+        recs.add(Recommendation(
+          title: 'Inform Patient of Dense Tissue',
+          detail: 'Patients with extremely dense breasts (Density D) should be informed that mammography alone may miss up to 40% of cancers. Discuss supplemental screening options.',
+          priority: RecPriority.medium,
+          category: RecCategory.clinical,
+          icon: '💬',
+        ));
+      } else if (densityIndex == 2) {
+        // Density C — heterogeneous, may obscure small masses
+        recs.add(Recommendation(
+          title: 'Consider Supplemental Ultrasound',
+          detail: '$densityClass detected. Heterogeneously dense tissue may obscure small masses on mammography. Supplemental whole-breast ultrasound is recommended, especially given ${isHighRisk ? "high risk score" : "clinical context"}.',
+          priority: isHighRisk ? RecPriority.high : RecPriority.medium,
+          category: RecCategory.imaging,
+          icon: '🔊',
+        ));
+      }
+      // Density A or B — no additional imaging needed, but note it
+      if (densityIndex != null && densityIndex <= 1 && !isHighRisk) {
+        recs.add(Recommendation(
+          title: 'Favorable Tissue Density',
+          detail: '$densityClass — mammography has high sensitivity for this tissue type. Standard annual screening schedule is appropriate.',
+          priority: RecPriority.low,
+          category: RecCategory.monitoring,
+          icon: '✅',
+        ));
+      }
     }
 
     // ── Normal / Low risk ─────────────────────────────────────────────────────

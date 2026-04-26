@@ -30,6 +30,7 @@ class ScanResultPage extends StatefulWidget {
   final MammogramValidationResult? mammogramValidation;
   final MammogramValidationResult? ultrasoundValidation;
   final UltrasoundAnalysisResult? ultrasoundAnalysis;
+  final DensityAnalysisResult? densityAnalysis;
 
   const ScanResultPage({
     super.key,
@@ -40,6 +41,7 @@ class ScanResultPage extends StatefulWidget {
     this.mammogramValidation,
     this.ultrasoundValidation,
     this.ultrasoundAnalysis,
+    this.densityAnalysis,
   });
 
   @override
@@ -163,6 +165,12 @@ class _ScanResultPageState extends State<ScanResultPage> {
               const SizedBox(height: 20),
             ],
 
+            // ── 3b. Density analysis (if CC + MLO both uploaded) ──────────
+            if (widget.densityAnalysis != null) ...[
+              _DensityCard(result: widget.densityAnalysis!),
+              const SizedBox(height: 20),
+            ],
+
             // ── 4. Risk score metrics ─────────────────────────────────────
             if (widget.tabularResult != null) ...[
               _RiskMetricsRow(
@@ -208,6 +216,7 @@ class _ScanResultPageState extends State<ScanResultPage> {
               patient: widget.selectedPatient,
               tabularResult: widget.tabularResult,
               ultrasoundAnalysis: widget.ultrasoundAnalysis,
+              densityAnalysis: widget.densityAnalysis,
             ),
             const SizedBox(height: 20),
 
@@ -896,6 +905,250 @@ class _GradCamCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 5b. Density Card
+// ─────────────────────────────────────────────────────────────────────────────
+class _DensityCard extends StatelessWidget {
+  final DensityAnalysisResult result;
+  const _DensityCard({required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Color per density class
+    final colors = [
+      const Color(0xFF10B981), // A — green (fatty, best)
+      const Color(0xFF3B82F6), // B — blue (scattered)
+      const Color(0xFFF59E0B), // C — amber (heterogeneous)
+      const Color(0xFFEF4444), // D — red (extremely dense)
+    ];
+    final color = colors[result.densityIndex.clamp(0, 3)];
+
+    return _Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.density_medium_rounded, color: color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Mammogram Density',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.getTextPrimary(context),
+                      ),
+                    ),
+                    Text(
+                      'BI-RADS Density Classification',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.getTextSecondary(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Density badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(isDark ? 0.2 : 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: color.withOpacity(0.4)),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Density ${['A','B','C','D'][result.densityIndex.clamp(0,3)]}',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                      ),
+                    ),
+                    Text(
+                      '${result.confidence.toStringAsFixed(1)}%',
+                      style: TextStyle(fontSize: 11, color: color),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Full class name
+          Text(
+            result.densityClass,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          // Clinical note
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(isDark ? 0.1 : 0.06),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: color.withOpacity(0.2)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline_rounded, size: 16, color: color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    result.clinicalNote,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.getTextSecondary(context),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Probability bars
+          Text(
+            'Class Probabilities',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.getTextPrimary(context),
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...result.probabilities.entries.map((e) {
+            final barColor = colors[result.probabilities.keys.toList().indexOf(e.key).clamp(0, 3)];
+            final pct = e.value;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        e.key.replaceAll('Density ', '').split('(').first.trim(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.getTextPrimary(context),
+                        ),
+                      ),
+                      Text(
+                        '${pct.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: barColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  LayoutBuilder(
+                    builder: (ctx, con) => Stack(
+                      children: [
+                        Container(
+                          height: 7,
+                          width: con.maxWidth,
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF2A2D47) : Colors.grey[200],
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        Container(
+                          height: 7,
+                          width: con.maxWidth * (pct / 100).clamp(0.0, 1.0),
+                          decoration: BoxDecoration(
+                            color: barColor,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+
+          // GradCAM heatmap (CC view)
+          if (result.hasGradcam) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Density Heatmap (CC View)',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.getTextPrimary(context),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Warm areas show regions that most influenced the density classification.',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.getTextSecondary(context),
+              ),
+            ),
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => _GradCamFullScreen(
+                    gradcamBase64: result.gradcamImage,
+                  ),
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.memory(
+                  Uri.parse('data:image/png;base64,${result.gradcamImage}')
+                      .data!
+                      .contentAsBytes(),
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const SizedBox(
+                    height: 80,
+                    child: Center(child: Icon(Icons.broken_image_rounded)),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GradCAM Full Screen Viewer
 // ─────────────────────────────────────────────────────────────────────────────
 class _GradCamFullScreen extends StatefulWidget {
@@ -1324,11 +1577,13 @@ class _PersonalizedRecommendationsCard extends StatelessWidget {
   final Map<String, dynamic> patient;
   final TabularPredictionResult? tabularResult;
   final UltrasoundAnalysisResult? ultrasoundAnalysis;
+  final DensityAnalysisResult? densityAnalysis;
 
   const _PersonalizedRecommendationsCard({
     required this.patient,
     required this.tabularResult,
     required this.ultrasoundAnalysis,
+    this.densityAnalysis,
   });
 
   @override
@@ -1337,6 +1592,7 @@ class _PersonalizedRecommendationsCard extends StatelessWidget {
       patient: patient,
       tabularResult: tabularResult,
       ultrasoundAnalysis: ultrasoundAnalysis,
+      densityAnalysis: densityAnalysis,
     );
 
     if (recs.isEmpty) return const SizedBox.shrink();

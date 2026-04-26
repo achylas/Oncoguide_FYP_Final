@@ -14,7 +14,7 @@ import '../widgets/section_header.dart';
 import '../widgets/tabular_data_card.dart';
 import 'existing_patient.dart';
 
-enum ImagingType { ultrasound, mammogram, both }
+enum ImagingType { ultrasound, mammogram, mammogramMlo, both }
 
 class NewAnalysisScreen extends StatefulWidget {
   const NewAnalysisScreen({super.key});
@@ -30,8 +30,9 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen>
   bool _showFullInfo = false;
   Map<String, dynamic>? selectedPatient;
   Map<ImagingType, File?> uploadedImages = {
-    ImagingType.mammogram: null,
-    ImagingType.ultrasound: null,
+    ImagingType.mammogram:    null,
+    ImagingType.mammogramMlo: null,
+    ImagingType.ultrasound:   null,
   };
 
   late AnimationController _headerAnimController;
@@ -172,8 +173,8 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen>
                     const SizedBox(height: 12),
                     ImagingCard(
                       type: ImagingType.mammogram,
-                      title: 'Mammogram',
-                      description: 'X-ray imaging of breast tissue',
+                      title: 'Mammogram (CC)',
+                      description: 'Cranio-caudal X-ray view',
                       icon: Icons.image_search_rounded,
                       gradient: LinearGradient(
                         colors: isDark
@@ -186,6 +187,24 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen>
                       uploadedFile: uploadedImages[ImagingType.mammogram],
                       onToggle: (file) =>
                           _toggleImaging(ImagingType.mammogram, file),
+                      patientId: selectedPatient?['id']?.toString(),
+                      patientName: selectedPatient?['name']?.toString(),
+                    ),
+                    const SizedBox(height: 12),
+                    ImagingCard(
+                      type: ImagingType.mammogramMlo,
+                      title: 'Mammogram (MLO)',
+                      description: 'Medio-lateral oblique view — for density analysis',
+                      icon: Icons.flip_rounded,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFF9A3C), Color(0xFFFFB347)],
+                      ),
+                      isSelected:
+                      selectedImaging.contains(ImagingType.mammogramMlo),
+                      isDisabled: !tabularAdded,
+                      uploadedFile: uploadedImages[ImagingType.mammogramMlo],
+                      onToggle: (file) =>
+                          _toggleImaging(ImagingType.mammogramMlo, file),
                       patientId: selectedPatient?['id']?.toString(),
                       patientName: selectedPatient?['name']?.toString(),
                     ),
@@ -290,7 +309,9 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen>
       if (selectedPatient != null) {
         final patientId   = selectedPatient!['id']?.toString() ?? '';
         final patientName = selectedPatient!['name']?.toString() ?? 'Unknown';
-        final imageType   = type == ImagingType.mammogram ? 'mammogram' : 'ultrasound';
+        final imageType   = type == ImagingType.mammogram ? 'mammogram'
+                          : type == ImagingType.mammogramMlo ? 'mammogram'
+                          : 'ultrasound';
         if (patientId.isNotEmpty) {
           PatientImagesService.savePatientImage(
             patientId: patientId,

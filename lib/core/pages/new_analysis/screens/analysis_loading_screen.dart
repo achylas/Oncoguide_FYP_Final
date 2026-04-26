@@ -6,8 +6,6 @@ import 'package:oncoguide_v2/services/report_service.dart';
 import '../../../conts/colors.dart';
 import '../../../widgets/resuable_top_bar.dart';
 import 'scan_result.dart';
-
-/// Shown while the app:
 ///  1. Validates the mammogram image (if selected) via the gatekeeper model
 ///  2. Runs the tabular risk prediction via the Random Forest model
 ///  3. Navigates to [ScanResultPage] with real results
@@ -154,6 +152,27 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
       }
     }
 
+    // ── Step 2c: Density analysis (if both CC + MLO uploaded) ────────────────
+    DensityAnalysisResult? densityResult;
+    final mloFile = widget.uploadedImages[ImagingType.mammogramMlo];
+    if (widget.selectedImagingTypes.contains(ImagingType.mammogram) &&
+        widget.selectedImagingTypes.contains(ImagingType.mammogramMlo) &&
+        mammogramFile != null &&
+        mloFile != null) {
+      _setStep(_Step.predicting, 'Analysing mammogram density (CC + MLO)…');
+      try {
+        densityResult = await ApiService.analyzeDensity(
+          ccFile:  mammogramFile,
+          mloFile: mloFile,
+        );
+      } on ApiException catch (e) {
+        // Non-fatal — log and continue without density result
+        print('[!] Density analysis failed (${e.statusCode}): ${e.message}');
+      } catch (e) {
+        print('[!] Density analysis error: $e');
+      }
+    }
+
     // ── Step 3: Save report ───────────────────────────────────────────────────
     _setStep(_Step.done, 'Saving report…');
     ReportService.saveReport(
@@ -164,6 +183,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
       mammogramValidation: validationResult,
       ultrasoundValidation: usValidationResult,
       ultrasoundAnalysis: usAnalysisResult,
+      densityAnalysis: densityResult,
     ); // fire-and-forget — don't block navigation
 
     // ── Step 4: Navigate to results ───────────────────────────────────────────
@@ -182,6 +202,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
           mammogramValidation: validationResult,
           ultrasoundValidation: usValidationResult,
           ultrasoundAnalysis: usAnalysisResult,
+          densityAnalysis: densityResult,
         ),
       ),
     );

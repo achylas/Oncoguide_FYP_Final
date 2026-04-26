@@ -34,14 +34,14 @@ class PatientImagePickerScreen extends StatelessWidget {
         showBackButton: true,
         showSettingsButton: false,
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: PatientImagesService.patientImagesByType(patientId, imageType),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final docs = snapshot.data?.docs ?? [];
+          final docs = snapshot.data ?? [];
 
           if (docs.isEmpty) {
             return Center(
@@ -79,7 +79,7 @@ class PatientImagePickerScreen extends StatelessWidget {
             ),
             itemCount: docs.length,
             itemBuilder: (ctx, i) {
-              final data = {'id': docs[i].id, ...docs[i].data()};
+              final data = docs[i];
               return _ImageTile(
                 data: data,
                 onSelect: () async {

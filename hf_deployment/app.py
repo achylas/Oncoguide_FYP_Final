@@ -5,6 +5,8 @@ Endpoints:
   POST /validate/mammogram      → MobileNetV3 gatekeeper (grayscale)
   POST /validate/ultrasound     → EfficientNet-B0 gatekeeper (RGB)
   POST /predict/tabular         → Random Forest + SHAP XAI
+  POST /analyze/ultrasound      → EfficientNet-B3 U-Net + GradCAM
+  POST /analyze/density         → Siamese EfficientNetV2-S (CC+MLO) + GradCAM
 """
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -17,15 +19,19 @@ import joblib
 import shap
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import timm
 import cv2
 import os
 from PIL import Image
 import io
 import base64
-from torchvision import transforms
+import zipfile
+import tempfile
+from torchvision import transforms, models
 from efficientnet_pytorch import EfficientNet
 import segmentation_models_pytorch as smp
+import pydicom
 
 # ─────────────────────────────────────────────
 # App setup
@@ -44,12 +50,33 @@ RF_MODEL_PATH     = os.path.join(BASE_DIR, "rf_breast_cancer.pkl")
 MAMMO_GATE_PATH   = os.path.join(BASE_DIR, "gatekeeper_best_v3.pth.zip")
 US_GATE_PATH      = os.path.join(BASE_DIR, "us_gatekeeper.pt.zip")
 US_ANALYSIS_PATH  = os.path.join(BASE_DIR, "us_analysis.pth.zip")
+DENSITY_PATH      = os.path.join(BASE_DIR, "density_model.pth.zip")
 
 FEATURE_ORDER = [
     'age', 'menarche', 'menopause', 'agefirst', 'children', 'breastfeeding',
     'imc', 'weight', 'menopause_status', 'pregnancy', 'family_history',
     'family_history_count', 'family_history_degree', 'exercise_regular'
 ]
+
+def _load_state_dict_from_zip_or_direct(path, map_location, suffixes=('.pth', '.pt')):
+    """Load a PyTorch state dict from a .zip file or directly."""
+    try:
+        return torch.load(path, map_location=map_location, weights_only=False)
+    except Exception:
+        with zipfile.ZipFile(path, 'r') as zf:
+            names = zf.namelist()
+            print(f"[i] ZIP contents of {os.path.basename(path)}: {names}")
+            target = next(
+                (f for f in names if any(f.endswith(s) for s in suffixes)),
+                names[0]
+            )
+            with tempfile.NamedTemporaryFile(suffix=os.path.splitext(target)[1], delete=False) as tmp:
+                tmp.write(zf.read(target))
+                tmp_path = tmp.name
+        state_dict = torch.load(tmp_path, map_location=map_location, weights_only=False)
+        os.unlink(tmp_path)
+        return state_dict
+
 
 # ─────────────────────────────────────────────
 # 1. Load Random Forest + SHAP
@@ -111,7 +138,6 @@ us_device = torch.device("cpu")
 if os.path.exists(US_GATE_PATH):
     try:
         us_model = _create_us_gatekeeper()
-        import zipfile, tempfile
 
         # Try direct torch.load first (works if it's a PyTorch zip format)
         try:
@@ -212,7 +238,7 @@ if os.path.exists(US_ANALYSIS_PATH):
         us_analysis_model = DualOutputModel(
             num_classes=3,
             encoder_name="efficientnet-b3",
-            encoder_weights=None   # weights loaded from checkpoint
+            encoder_weights=None
         )
         import zipfile, tempfile
         try:
@@ -243,6 +269,214 @@ if os.path.exists(US_ANALYSIS_PATH):
         us_analysis_model = None
 else:
     print(f"[✗] Ultrasound analysis model not found at {US_ANALYSIS_PATH}")
+
+# ─────────────────────────────────────────────
+# 5. Density Model — Siamese EfficientNetV2-S
+# ─────────────────────────────────────────────
+DENSITY_LABELS = [
+    "Density A (Fatty)",
+    "Density B (Scattered)",
+    "Density C (Heterogeneous)",
+    "Density D (Extremely Dense)",
+]
+DENSITY_LABEL_SHORT = ["A - Fatty", "B - Scattered", "C - Heterogeneous", "D - Extremely Dense"]
+
+def _get_efficientnet_v2s():
+    """EfficientNetV2-S backbone (features only)."""
+    m = models.efficientnet_v2_s(weights=None)
+    return m.features, 1280
+
+class SiameseEfficientNet(nn.Module):
+    """Siamese network: takes CC + MLO views, outputs 4-class density."""
+    def __init__(self, num_classes: int = 4):
+        super().__init__()
+        self.backbone, self.feat_dim = _get_efficientnet_v2s()
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.classifier = nn.Sequential(
+            nn.Linear(self.feat_dim * 2, 512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, num_classes),
+        )
+
+    def forward(self, cc: torch.Tensor, mlo: torch.Tensor) -> torch.Tensor:
+        f1 = self.pool(self.backbone(cc)).flatten(1)
+        f2 = self.pool(self.backbone(mlo)).flatten(1)
+        return self.classifier(torch.cat([f1, f2], dim=1))
+
+
+density_model  = None
+density_device = torch.device("cpu")
+
+if os.path.exists(DENSITY_PATH):
+    try:
+        density_model = SiameseEfficientNet(num_classes=4)
+        state_dict    = _load_state_dict_from_zip_or_direct(
+            DENSITY_PATH, density_device, suffixes=('.pth', '.pt')
+        )
+        # Handle checkpoint wrappers
+        if isinstance(state_dict, dict):
+            for key in ('model_state_dict', 'state_dict', 'model'):
+                if key in state_dict:
+                    state_dict = state_dict[key]
+                    break
+        density_model.load_state_dict(state_dict, strict=True)
+        density_model.to(density_device)
+        density_model.eval()
+        print("[✓] Density model loaded")
+    except Exception as e:
+        print(f"[✗] Density model load error: {e}")
+        density_model = None
+else:
+    print(f"[✗] Density model not found at {DENSITY_PATH}")
+
+
+# ── Density preprocessing ──────────────────────────────────────────────────
+
+def _preprocess_density_image(file_bytes: bytes, target_size: int = 1024) -> np.ndarray:
+    """
+    Decode (JPEG/PNG/DICOM) → normalise → crop breast → align orientation → CLAHE.
+    Returns a uint8 grayscale numpy array of shape (target_size, target_size).
+    """
+    # Try DICOM first, then fall back to standard image formats
+    img = None
+    try:
+        ds  = pydicom.dcmread(io.BytesIO(file_bytes))
+        img = ds.pixel_array.astype(np.float32)
+        # MONOCHROME1 means bright = air (invert so tissue is bright)
+        if getattr(ds, "PhotometricInterpretation", "") == "MONOCHROME1":
+            img = img.max() - img
+    except Exception:
+        pass  # not a DICOM file
+
+    if img is None:
+        nparr = np.frombuffer(file_bytes, np.uint8)
+        img   = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            raise ValueError("Could not decode image. Use JPEG, PNG, or DICOM.")
+        img = img.astype(np.float32)
+
+    # Normalise to [0, 255]
+    img = (img - img.min()) / (img.max() - img.min() + 1e-7)
+    img = (img * 255).astype(np.uint8)
+
+    # Crop breast region
+    _, thresh = cv2.threshold(img, 5, 255, cv2.THRESH_BINARY)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        cnt = max(contours, key=cv2.contourArea)
+        x, y, w, h = cv2.boundingRect(cnt)
+        img = img[y:y + h, x:x + w]
+
+    # Resize keeping aspect ratio, pad to square
+    h, w   = img.shape
+    scale  = target_size / max(h, w)
+    new_w  = int(w * scale)
+    new_h  = int(h * scale)
+    resized = cv2.resize(img, (new_w, new_h))
+
+    canvas = np.zeros((target_size, target_size), dtype=np.uint8)
+
+    # Orientation alignment (left vs right breast)
+    left_sum  = np.sum(img[:, :w // 2])
+    right_sum = np.sum(img[:, w // 2:])
+    is_right  = right_sum > left_sum
+
+    dy = (target_size - new_h) // 2
+    dx = (target_size - new_w) if is_right else 0
+    canvas[dy:dy + new_h, dx:dx + new_w] = resized
+
+    # CLAHE enhancement
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    return clahe.apply(canvas)
+
+
+def _density_to_tensor(img: np.ndarray, size: int = 384) -> torch.Tensor:
+    """Grayscale uint8 → 3-channel float tensor [1, 3, size, size]."""
+    resized = cv2.resize(img, (size, size))
+    rgb     = np.stack([resized, resized, resized], axis=-1)   # H×W×3
+    tensor  = torch.from_numpy(rgb).permute(2, 0, 1).float() / 255.0
+    return tensor.unsqueeze(0)   # [1, 3, H, W]
+
+
+def _density_gradcam(
+    model: SiameseEfficientNet,
+    cc_t: torch.Tensor,
+    mlo_t: torch.Tensor,
+    target_class: int,
+    cc_img: np.ndarray,
+) -> str:
+    """
+    Compute GradCAM on the CC view and return a base64-encoded PNG overlay.
+
+    Strategy: use forward hooks to capture the last backbone feature map
+    (activations) and its gradients in a single forward+backward pass,
+    avoiding the stale-activation bug that arises when re-running the
+    backbone inside torch.no_grad() after the gradient pass.
+    """
+    model.eval()
+
+    # ── Hook storage ──────────────────────────────────────────────────────
+    _acts: dict  = {}
+    _grads: dict = {}
+
+    # Target the last conv block of EfficientNetV2-S features
+    # model.backbone is nn.Sequential; last meaningful block is index -1
+    target_layer = model.backbone[-1]
+
+    def _fwd_hook(module, inp, out):
+        _acts['value'] = out  # keep as tensor (with grad_fn)
+
+    def _bwd_hook(module, grad_in, grad_out):
+        _grads['value'] = grad_out[0].detach()
+
+    fwd_h = target_layer.register_forward_hook(_fwd_hook)
+    bwd_h = target_layer.register_full_backward_hook(_bwd_hook)
+
+    try:
+        # Single forward pass — activations captured by hook
+        cc_req  = cc_t.clone().requires_grad_(True)
+        mlo_req = mlo_t.clone()
+
+        output = model(cc_req, mlo_req)
+        model.zero_grad()
+        output[0, target_class].backward()
+    finally:
+        fwd_h.remove()
+        bwd_h.remove()
+
+    if 'value' not in _grads or 'value' not in _acts:
+        return ""
+
+    grads = _grads['value']                          # [1, C, H, W]
+    acts  = _acts['value'].detach()                  # [1, C, H, W]
+
+    # Global-average-pool the gradients → channel weights
+    pooled = grads.mean(dim=[2, 3], keepdim=True)    # [1, C, 1, 1]
+
+    # Weighted combination of activation maps
+    cam = (pooled * acts).sum(dim=1, keepdim=True)   # [1, 1, H, W]
+    cam = torch.relu(cam).squeeze().cpu().numpy()    # ReLU + squeeze
+
+    # Normalise to [0, 1]
+    cam = cam / (cam.max() + 1e-7)
+
+    # Resize and colourise
+    display_size    = 384
+    cam_resized     = cv2.resize(cam, (display_size, display_size))
+    heatmap_uint8   = (cam_resized * 255).astype(np.uint8)
+    colored         = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
+
+    # Overlay on original CC image
+    cc_display = cv2.resize(cc_img, (display_size, display_size))
+    cc_rgb     = cv2.cvtColor(cc_display, cv2.COLOR_GRAY2RGB)
+    overlay    = cv2.addWeighted(cc_rgb, 0.6, colored, 0.4, 0)
+
+    pil_img = Image.fromarray(overlay)
+    buf     = io.BytesIO()
+    pil_img.save(buf, format='PNG')
+    return base64.b64encode(buf.getvalue()).decode('utf-8')
+
 
 # ─────────────────────────────────────────────
 # Schemas
@@ -282,6 +516,14 @@ class UltrasoundAnalysisResult(BaseModel):
     confidence: float        # 0–100
     probabilities: dict      # class → probability %
     gradcam_image: str       # base64 encoded PNG heatmap overlay
+
+class DensityAnalysisResult(BaseModel):
+    density_class: str       # e.g. "Density B (Scattered)"
+    density_label: str       # short label e.g. "B - Scattered"
+    density_index: int       # 0=A, 1=B, 2=C, 3=D
+    confidence: float        # 0–100
+    probabilities: dict      # class → probability %
+    gradcam_image: str       # base64 encoded PNG heatmap overlay (CC view)
 
 # ─────────────────────────────────────────────
 # GradCAM helper
@@ -370,9 +612,11 @@ def _compute_gradcam(model, tensor, target_class_idx, device):
 def health():
     return {
         "status": "ok",
-        "rf_model_loaded":       rf_model is not None,
-        "mammo_gate_loaded":     mammo_model is not None,
-        "us_gate_loaded":        us_model is not None,
+        "rf_model_loaded":          rf_model is not None,
+        "mammo_gate_loaded":        mammo_model is not None,
+        "us_gate_loaded":           us_model is not None,
+        "us_analysis_loaded":       us_analysis_model is not None,
+        "density_model_loaded":     density_model is not None,
     }
 
 
@@ -508,6 +752,72 @@ async def analyze_ultrasound(file: UploadFile = File(...)):
     return UltrasoundAnalysisResult(
         prediction=pred_label,
         prediction_index=pred_idx,
+        confidence=confidence,
+        probabilities=probabilities,
+        gradcam_image=gradcam_b64,
+    )
+
+
+@app.post("/analyze/density", response_model=DensityAnalysisResult)
+async def analyze_density(
+    cc_file:  UploadFile = File(..., description="CC (cranio-caudal) mammogram view"),
+    mlo_file: UploadFile = File(..., description="MLO (medio-lateral oblique) mammogram view"),
+):
+    """
+    Classify mammogram breast density (BI-RADS A–D) using a Siamese EfficientNetV2-S.
+    Requires two views: CC and MLO.
+    Returns density class, per-class probabilities, and a GradCAM heatmap of the CC view.
+    """
+    if density_model is None:
+        raise HTTPException(status_code=503, detail="Density model not loaded.")
+
+    allowed = {"image/jpeg", "image/png", "image/jpg",
+               "application/dicom", "application/octet-stream"}
+    for f, name in [(cc_file, "cc_file"), (mlo_file, "mlo_file")]:
+        if f.content_type not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{name}: use JPEG, PNG, or DICOM (got {f.content_type})."
+            )
+
+    cc_bytes  = await cc_file.read()
+    mlo_bytes = await mlo_file.read()
+
+    try:
+        cc_proc  = _preprocess_density_image(cc_bytes)
+        mlo_proc = _preprocess_density_image(mlo_bytes)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    cc_t  = _density_to_tensor(cc_proc).to(density_device)
+    mlo_t = _density_to_tensor(mlo_proc).to(density_device)
+
+    # ── Inference ─────────────────────────────────────────────────────────
+    with torch.no_grad():
+        logits = density_model(cc_t, mlo_t)
+        probs  = F.softmax(logits, dim=1)[0]
+
+    pred_idx   = int(torch.argmax(probs).item())
+    confidence = round(float(probs[pred_idx].item()) * 100, 2)
+
+    probabilities = {
+        DENSITY_LABELS[i]: round(float(probs[i].item()) * 100, 2)
+        for i in range(len(DENSITY_LABELS))
+    }
+
+    # ── GradCAM on CC view ────────────────────────────────────────────────
+    try:
+        gradcam_b64 = _density_gradcam(
+            density_model, cc_t, mlo_t, pred_idx, cc_proc
+        )
+    except Exception as e:
+        print(f"[!] Density GradCAM failed: {e}")
+        gradcam_b64 = ""
+
+    return DensityAnalysisResult(
+        density_class=DENSITY_LABELS[pred_idx],
+        density_label=DENSITY_LABEL_SHORT[pred_idx],
+        density_index=pred_idx,
         confidence=confidence,
         probabilities=probabilities,
         gradcam_image=gradcam_b64,

@@ -15,11 +15,35 @@ class ReportDetailScreen extends StatefulWidget {
 class _ReportDetailScreenState extends State<ReportDetailScreen> {
   bool _savingPdf = false;
   String? _pdfUrl;
+  int _patientAge = 0;
 
   @override
   void initState() {
     super.initState();
     _pdfUrl = widget.reportData['pdfUrl']?.toString();
+    // patientAge may not be stored in the report — fetch from patients collection
+    final storedAge = (widget.reportData['patientAge'] as num?)?.toInt() ?? 0;
+    if (storedAge > 0) {
+      _patientAge = storedAge;
+    } else {
+      _fetchPatientAge();
+    }
+  }
+
+  Future<void> _fetchPatientAge() async {
+    final patientId = widget.reportData['patientId']?.toString();
+    if (patientId == null || patientId.isEmpty) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('patients')
+          .doc(patientId)
+          .get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _patientAge = (doc.data()?['age'] as num?)?.toInt() ?? 0;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _saveAsPdf() async {
@@ -72,7 +96,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final bg = isDark ? const Color(0xFF0A0E21) : const Color(0xFFF0F2F8);
 
     final patientName   = widget.reportData['patientName']?.toString() ?? 'Unknown';
-    final patientAge    = (widget.reportData['patientAge'] as num?)?.toInt() ?? 0;
+    final patientAge    = _patientAge;
     final riskLabel     = widget.reportData['riskLabel']?.toString() ?? 'Pending';
     final riskPct       = (widget.reportData['riskPercentage'] as num?)?.toDouble() ?? 0.0;
     final usPrediction  = widget.reportData['usPrediction']?.toString();
@@ -205,7 +229,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(patientName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.getTextPrimary(context))),
-                        Text('$patientAge years', style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context))),
+                        Text(patientAge > 0 ? '$patientAge years' : 'Age not recorded', style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context))),
                       ],
                     ),
                   ),

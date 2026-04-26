@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:oncoguide_v2/core/pages/dashboard/patient_card.dart';
 import 'package:oncoguide_v2/core/pages/dashboard/quick_actions.dart';
 import 'package:oncoguide_v2/core/pages/dashboard/report_card.dart';
-import 'package:oncoguide_v2/core/pages/history/scan_history_screen.dart';
 import 'package:oncoguide_v2/core/pages/history/report_detail_screen.dart';
 import '../../conts/colors.dart';
 import '../../utils/animations.dart';
@@ -73,7 +72,7 @@ class DashboardContent extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Recent Scans — last 6 reports from Firestore
+// Recent Scans — one card per PATIENT, showing their latest report
 // ─────────────────────────────────────────────────────────────────────────────
 class _RecentScansRow extends StatelessWidget {
   final String uid;
@@ -81,13 +80,12 @@ class _RecentScansRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Merge mammogram + ultrasound, take latest 6
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('mammogram_reports')
           .where('doctorId', isEqualTo: uid)
           .orderBy('createdAt', descending: true)
-          .limit(6)
+          .limit(20)
           .snapshots(),
       builder: (context, mammoSnap) {
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -95,17 +93,19 @@ class _RecentScansRow extends StatelessWidget {
               .collection('ultrasound_reports')
               .where('doctorId', isEqualTo: uid)
               .orderBy('createdAt', descending: true)
-              .limit(6)
+              .limit(20)
               .snapshots(),
           builder: (context, usSnap) {
             final mammoDocs = mammoSnap.data?.docs ?? [];
             final usDocs    = usSnap.data?.docs ?? [];
 
+            // Merge all reports
             final all = [
               ...mammoDocs.map((d) => {'id': d.id, 'type': 'mammogram', ...d.data()}),
               ...usDocs.map((d) => {'id': d.id, 'type': 'ultrasound', ...d.data()}),
             ];
 
+            // Sort newest first
             all.sort((a, b) {
               final ta = a['createdAt'];
               final tb = b['createdAt'];
@@ -113,7 +113,18 @@ class _RecentScansRow extends StatelessWidget {
               return 0;
             });
 
-            final recent = all.take(6).toList();
+            // Deduplicate: keep only the LATEST report per patient
+            final seen    = <String>{};
+            final unique  = <Map<String, dynamic>>[];
+            for (final r in all) {
+              final pid = r['patientId']?.toString() ?? r['id']?.toString() ?? '';
+              if (!seen.contains(pid)) {
+                seen.add(pid);
+                unique.add(r);
+              }
+            }
+
+            final recent = unique.take(6).toList();
 
             if (recent.isEmpty) {
               return Padding(
@@ -135,11 +146,13 @@ class _RecentScansRow extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 itemCount: recent.length,
                 itemBuilder: (_, i) {
-                  final r = recent[i];
+                  final r    = recent[i];
                   final isUS = r['type'] == 'ultrasound';
-                  final status = isUS
-                      ? (r['prediction']?.toString() ?? 'Unknown')
-                      : (r['riskLabel']?.toString() ?? 'Unknown');
+                  // Determine display status from latest report
+                  final usPred   = r['usPrediction']?.toString() ?? r['prediction']?.toString();
+                  final riskLbl  = r['riskLabel']?.toString();
+                  final status   = usPred ?? riskLbl ?? 'Unknown';
+
                   return Animations.slideUp(
                     delay: i * 100,
                     child: GestureDetector(
@@ -150,7 +163,7 @@ class _RecentScansRow extends StatelessWidget {
                         ),
                       ),
                       child: CompactReportCard(
-                        reportName: isUS ? 'Ultrasound Report' : 'Mammogram Report',
+                        reportName: isUS ? 'Ultrasound' : 'Mammogram',
                         patientName: r['patientName']?.toString() ?? 'Unknown',
                         date: _formatDate(r['createdAt']),
                         status: status,
@@ -182,7 +195,7 @@ class _RecentScansRow extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Recent Patients — last 4 from Firestore
+// Recent Patients — last 4 from Firestore, with latest report status
 // ─────────────────────────────────────────────────────────────────────────────
 class _RecentPatientsRow extends StatelessWidget {
   @override
@@ -216,23 +229,110 @@ class _RecentPatientsRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             itemCount: docs.length,
             itemBuilder: (_, i) {
-              final p = docs[i].data();
+              final p   = docs[i].data();
+              final pid = docs[i].id;
               final age = (p['age'] as num?)?.toInt() ?? 0;
-              // Derive status from risk_patients collection if needed
-              final status = p['status']?.toString() ?? 'Active';
               return Animations.slideUp(
                 delay: i * 100,
-                child: EnhancedPatientCard(
+                child: _PatientCardWithStatus(
+                  patientId: pid,
                   name: p['name']?.toString() ?? 'Unknown',
-                  lastCheckup: _formatDate(p['createdAt']),
                   age: age,
-                  stage: p['stage']?.toString() ?? '—',
-                  status: status,
+                  createdAt: p['createdAt'],
                   index: i,
                 ),
               );
             },
           ),
+        );
+      },
+    );
+  }
+}
+
+/// Fetches the latest report for a patient and shows its status badge.
+class _PatientCardWithStatus extends StatelessWidget {
+  final String patientId;
+  final String name;
+  final int age;
+  final dynamic createdAt;
+  final int index;
+
+  const _PatientCardWithStatus({
+    required this.patientId,
+    required this.name,
+    required this.age,
+    required this.createdAt,
+    required this.index,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Fetch latest report for this patient (mammogram or ultrasound)
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('mammogram_reports')
+          .where('patientId', isEqualTo: patientId)
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .snapshots(),
+      builder: (context, mammoSnap) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('ultrasound_reports')
+              .where('patientId', isEqualTo: patientId)
+              .orderBy('createdAt', descending: true)
+              .limit(1)
+              .snapshots(),
+          builder: (context, usSnap) {
+            // Pick the most recent report across both collections
+            Map<String, dynamic>? latestReport;
+            Timestamp? latestTs;
+
+            final mammoDoc = mammoSnap.data?.docs.firstOrNull;
+            final usDoc    = usSnap.data?.docs.firstOrNull;
+
+            if (mammoDoc != null) {
+              final ts = mammoDoc.data()['createdAt'];
+              if (ts is Timestamp) latestTs = ts;
+              latestReport = {'type': 'mammogram', 'id': mammoDoc.id, ...mammoDoc.data()};
+            }
+            if (usDoc != null) {
+              final ts = usDoc.data()['createdAt'];
+              if (ts is Timestamp && (latestTs == null || ts.compareTo(latestTs) > 0)) {
+                latestReport = {'type': 'ultrasound', 'id': usDoc.id, ...usDoc.data()};
+              }
+            }
+
+            // Determine status from latest report
+            String status = 'No Reports';
+            if (latestReport != null) {
+              final usPred  = latestReport['usPrediction']?.toString() ?? latestReport['prediction']?.toString();
+              final riskLbl = latestReport['riskLabel']?.toString();
+              if (usPred == 'Malignant') {
+                status = 'Malignant';
+              } else if (usPred == 'Benign') {
+                status = 'Benign';
+              } else if (usPred == 'Normal') {
+                status = 'Normal';
+              } else if (riskLbl == 'High Risk') {
+                status = 'High Risk';
+              } else if (riskLbl != null) {
+                status = riskLbl;
+              }
+            }
+
+            return EnhancedPatientCard(
+              name: name,
+              lastCheckup: _formatDate(createdAt),
+              age: age,
+              stage: status,
+              status: status == 'Malignant' ? 'Critical'
+                    : status == 'High Risk'  ? 'Under Treatment'
+                    : 'Active',
+              index: index,
+            );
+          },
         );
       },
     );

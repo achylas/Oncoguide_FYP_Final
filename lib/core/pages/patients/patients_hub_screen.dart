@@ -45,7 +45,7 @@ class _PatientsHubScreenState extends State<PatientsHubScreen>
       ),
       body: Column(
         children: [
-          // Search bar
+          // ── Search bar ──────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Container(
@@ -62,10 +62,7 @@ class _PatientsHubScreenState extends State<PatientsHubScreen>
               ),
               child: TextField(
                 onChanged: (v) => setState(() => _search = v.toLowerCase()),
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.getTextPrimary(context),
-                ),
+                style: TextStyle(fontSize: 14, color: AppColors.getTextPrimary(context)),
                 decoration: InputDecoration(
                   hintText: 'Search patients by name...',
                   hintStyle: TextStyle(
@@ -84,18 +81,19 @@ class _PatientsHubScreenState extends State<PatientsHubScreen>
                     borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
               ),
             ),
           ),
           const SizedBox(height: 12),
 
-          // Stats row
+          // ── Stats row ───────────────────────────────────────────────────
           _StatsRow(uid: _uid),
           const SizedBox(height: 4),
 
-          // Tab bar
+          // ── Tab bar ─────────────────────────────────────────────────────
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
@@ -120,7 +118,7 @@ class _PatientsHubScreenState extends State<PatientsHubScreen>
             ),
           ),
 
-          // Tab views
+          // ── Tab views ───────────────────────────────────────────────────
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -163,7 +161,7 @@ class _StatsRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  _StatChip('$total', 'Total', const Color(0xFF6366F1)),
+                  _StatChip('$total',  'Total',  const Color(0xFF6366F1)),
                   const SizedBox(width: 10),
                   _StatChip('$cancer', 'Cancer', const Color(0xFFEF4444)),
                   const SizedBox(width: 10),
@@ -197,22 +195,14 @@ class _StatChip extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                color: color,
-              ),
-            ),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: color.withOpacity(0.8),
-              ),
-            ),
+            Text(value,
+                style: TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.w900, color: color)),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: color.withOpacity(0.8))),
           ],
         ),
       ),
@@ -221,7 +211,7 @@ class _StatChip extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 1 — All Patients (from patients collection)
+// Tab 1 — All Patients
 // ─────────────────────────────────────────────────────────────────────────────
 class _AllPatientsTab extends StatelessWidget {
   final String search;
@@ -253,8 +243,8 @@ class _AllPatientsTab extends StatelessWidget {
             final data = {'id': filtered[i].id, ...filtered[i].data()};
             return _PatientCard(
               data: data,
-              badgeColor: const Color(0xFF6366F1),
-              badgeLabel: 'Patient',
+              fallbackBadgeColor: const Color(0xFF6366F1),
+              fallbackBadgeLabel: 'Patient',
             );
           },
         );
@@ -264,7 +254,7 @@ class _AllPatientsTab extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 2 — Cancer Patients (from cancer_patients collection)
+// Tab 2 — Cancer Patients
 // ─────────────────────────────────────────────────────────────────────────────
 class _CancerPatientsTab extends StatelessWidget {
   final String uid;
@@ -289,9 +279,7 @@ class _CancerPatientsTab extends StatelessWidget {
           return search.isEmpty || name.contains(search);
         }).toList();
 
-        if (filtered.isEmpty) {
-          return _empty(context, 'No cancer patients flagged');
-        }
+        if (filtered.isEmpty) return _empty(context, 'No cancer patients flagged');
 
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -300,8 +288,8 @@ class _CancerPatientsTab extends StatelessWidget {
             final data = {'id': filtered[i].id, ...filtered[i].data()};
             return _PatientCard(
               data: data,
-              badgeColor: const Color(0xFFEF4444),
-              badgeLabel: 'Malignant',
+              fallbackBadgeColor: const Color(0xFFEF4444),
+              fallbackBadgeLabel: 'Malignant',
               isCancerRecord: true,
             );
           },
@@ -312,7 +300,7 @@ class _CancerPatientsTab extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 3 — Normal Patients (patients NOT in cancer_patients)
+// Tab 3 — Normal Patients
 // ─────────────────────────────────────────────────────────────────────────────
 class _NormalPatientsTab extends StatelessWidget {
   final String uid;
@@ -356,8 +344,8 @@ class _NormalPatientsTab extends StatelessWidget {
                 final data = {'id': filtered[i].id, ...filtered[i].data()};
                 return _PatientCard(
                   data: data,
-                  badgeColor: const Color(0xFF10B981),
-                  badgeLabel: 'Normal',
+                  fallbackBadgeColor: const Color(0xFF10B981),
+                  fallbackBadgeLabel: 'Normal',
                 );
               },
             );
@@ -369,31 +357,26 @@ class _NormalPatientsTab extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Patient Card
+// Patient Card — shows latest report status badge fetched live
 // ─────────────────────────────────────────────────────────────────────────────
 class _PatientCard extends StatelessWidget {
   final Map<String, dynamic> data;
-  final Color badgeColor;
-  final String badgeLabel;
+  final Color fallbackBadgeColor;
+  final String fallbackBadgeLabel;
   final bool isCancerRecord;
 
   const _PatientCard({
     required this.data,
-    required this.badgeColor,
-    required this.badgeLabel,
+    required this.fallbackBadgeColor,
+    required this.fallbackBadgeLabel,
     this.isCancerRecord = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    // Support both patients collection and cancer_patients collection field names
-    final name = (data['name'] ?? data['patientName'] ?? 'Unknown').toString();
-    final age  = (data['age'] ?? data['patientAge'] ?? 0) as num;
-    final id   = data['id']?.toString() ?? '';
-
-    // For cancer records, get the patient ID to load full profile
+    final name      = (data['name'] ?? data['patientName'] ?? 'Unknown').toString();
+    final age       = ((data['age'] ?? data['patientAge'] ?? 0) as num).toInt();
+    final id        = data['id']?.toString() ?? '';
     final patientId = isCancerRecord
         ? (data['patientId']?.toString() ?? id)
         : id;
@@ -404,6 +387,114 @@ class _PatientCard extends StatelessWidget {
       final dt = ts.toDate();
       dateStr = '${dt.day}/${dt.month}/${dt.year}';
     }
+
+    // Cancer records already have a definitive badge — no need to fetch
+    if (isCancerRecord) {
+      return _CardBody(
+        name: name, age: age, dateStr: dateStr,
+        patientId: patientId,
+        badgeLabel: fallbackBadgeLabel,
+        badgeColor: fallbackBadgeColor,
+      );
+    }
+
+    // For regular patients: fetch latest report to show real status
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('mammogram_reports')
+          .where('patientId', isEqualTo: patientId)
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .snapshots(),
+      builder: (context, mammoSnap) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('ultrasound_reports')
+              .where('patientId', isEqualTo: patientId)
+              .orderBy('createdAt', descending: true)
+              .limit(1)
+              .snapshots(),
+          builder: (context, usSnap) {
+            // Determine which report is more recent
+            final mammoDoc = mammoSnap.data?.docs.firstOrNull;
+            final usDoc    = usSnap.data?.docs.firstOrNull;
+
+            Map<String, dynamic>? latest;
+            Timestamp? latestTs;
+
+            if (mammoDoc != null) {
+              final t = mammoDoc.data()['createdAt'];
+              if (t is Timestamp) latestTs = t;
+              latest = mammoDoc.data();
+            }
+            if (usDoc != null) {
+              final t = usDoc.data()['createdAt'];
+              if (t is Timestamp &&
+                  (latestTs == null || t.compareTo(latestTs) > 0)) {
+                latest = usDoc.data();
+              }
+            }
+
+            // Derive badge from latest report
+            String label = fallbackBadgeLabel;
+            Color  color = fallbackBadgeColor;
+
+            if (latest != null) {
+              final usPred  = latest['usPrediction']?.toString()
+                  ?? latest['prediction']?.toString();
+              final riskLbl = latest['riskLabel']?.toString();
+
+              if (usPred == 'Malignant') {
+                label = 'Malignant'; color = const Color(0xFFEF4444);
+              } else if (usPred == 'Benign') {
+                label = 'Benign';    color = const Color(0xFFF59E0B);
+              } else if (usPred == 'Normal') {
+                label = 'Normal';    color = const Color(0xFF10B981);
+              } else if (riskLbl == 'High Risk') {
+                label = 'High Risk'; color = const Color(0xFFEF4444);
+              } else if (riskLbl != null && riskLbl.isNotEmpty) {
+                label = riskLbl;     color = const Color(0xFF10B981);
+              } else {
+                label = 'Scanned';   color = const Color(0xFF6366F1);
+              }
+            }
+
+            return _CardBody(
+              name: name, age: age, dateStr: dateStr,
+              patientId: patientId,
+              badgeLabel: label,
+              badgeColor: color,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Card body — pure UI, no data fetching
+// ─────────────────────────────────────────────────────────────────────────────
+class _CardBody extends StatelessWidget {
+  final String name;
+  final int    age;
+  final String dateStr;
+  final String patientId;
+  final String badgeLabel;
+  final Color  badgeColor;
+
+  const _CardBody({
+    required this.name,
+    required this.age,
+    required this.dateStr,
+    required this.patientId,
+    required this.badgeLabel,
+    required this.badgeColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -433,28 +524,25 @@ class _PatientCard extends StatelessWidget {
           children: [
             // Avatar
             Container(
-              width: 50,
-              height: 50,
+              width: 50, height: 50,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [badgeColor, badgeColor.withOpacity(0.7)],
-                ),
+                    colors: [badgeColor, badgeColor.withOpacity(0.7)]),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Center(
                 child: Text(
                   name.isNotEmpty ? name[0].toUpperCase() : '?',
                   style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white),
                 ),
               ),
             ),
             const SizedBox(width: 14),
 
-            // Info
+            // Name + meta
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -462,39 +550,34 @@ class _PatientCard extends StatelessWidget {
                   Text(
                     name,
                     style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.getTextPrimary(context),
-                    ),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.getTextPrimary(context)),
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      if (age != 0) ...[
-                        Icon(Icons.cake_outlined, size: 12,
+                      if (age > 0) ...[
+                        Icon(Icons.cake_outlined,
+                            size: 12,
                             color: AppColors.getTextSecondary(context)),
                         const SizedBox(width: 3),
-                        Text(
-                          '$age yrs',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
+                        Text('$age yrs',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.getTextSecondary(context))),
                         const SizedBox(width: 10),
                       ],
                       if (dateStr.isNotEmpty) ...[
-                        Icon(Icons.calendar_today_outlined, size: 12,
+                        Icon(Icons.calendar_today_outlined,
+                            size: 12,
                             color: AppColors.getTextSecondary(context)),
                         const SizedBox(width: 3),
-                        Text(
-                          dateStr,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
+                        Text(dateStr,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.getTextSecondary(context))),
                       ],
                     ],
                   ),
@@ -502,12 +585,13 @@ class _PatientCard extends StatelessWidget {
               ),
             ),
 
-            // Badge + arrow
+            // Badge + chevron
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: badgeColor.withOpacity(isDark ? 0.2 : 0.1),
                     borderRadius: BorderRadius.circular(8),
@@ -516,10 +600,9 @@ class _PatientCard extends StatelessWidget {
                   child: Text(
                     badgeLabel,
                     style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: badgeColor,
-                    ),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: badgeColor),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -542,16 +625,16 @@ Widget _empty(BuildContext context, String label) {
     child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.person_search_rounded, size: 56,
+        Icon(Icons.person_search_rounded,
+            size: 56,
             color: AppColors.getTextSecondary(context).withOpacity(0.4)),
         const SizedBox(height: 12),
         Text(
           label,
           style: TextStyle(
-            fontSize: 15,
-            color: AppColors.getTextSecondary(context),
-            fontWeight: FontWeight.w500,
-          ),
+              fontSize: 15,
+              color: AppColors.getTextSecondary(context),
+              fontWeight: FontWeight.w500),
         ),
       ],
     ),
