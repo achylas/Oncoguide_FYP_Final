@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:oncoguide_v2/core/pages/all_patients/all_patients.dart';
 import 'package:oncoguide_v2/core/pages/history/scan_history_screen.dart';
 import 'package:oncoguide_v2/core/pages/patients/patients_hub_screen.dart';
+import 'package:oncoguide_v2/core/utils/nav_bar.dart';
 
 import '../pages/auth/login.dart';
-import '../pages/dashboard/dashboard_screen.dart';
 import '../pages/new_analysis/screens/new_analysis_screen.dart';
 import '../pages/profile.dart';
 import '../pages/quickaccess/addpatient.dart';
@@ -26,7 +26,7 @@ class AppRoutes {
       case patientsHub:
         return MaterialPageRoute(builder: (_) => const PatientsHubScreen());
       case dashboard:
-        return MaterialPageRoute(builder: (_) => const DashboardScreen());
+        return MaterialPageRoute(builder: (_) => const MainScreen());
       case addPatient:
         return MaterialPageRoute(builder: (_) => const AddPatientScreen());
       case profile:

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import '../conts/colors.dart';
-import '../pages/dashboard/dashboard_screen.dart';
-import '../pages/new_analysis/screens/new_analysis_screen.dart';
+import '../pages/dashboard/dashboard_content.dart';
+import '../pages/patients/patients_hub_screen.dart';
 import '../pages/profile.dart';
 
+/// Global key so any widget can switch the nav bar tab from outside MainScreen.
+final mainScreenKey = GlobalKey<_MainScreenState>();
+
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  const MainScreen({Key? key}) : super(key: key);
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -14,13 +17,18 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  final List<Widget> _screens = [
-    const DashboardScreen(),
-    const NewAnalysisScreen(),
-    const DoctorProfileScreen(),
+  final List<Widget> _screens = const [
+    DashboardContent(),
+    PatientsHubScreen(),
+    DoctorProfileScreen(),
   ];
 
   void _onNavTap(int index) {
+    setState(() => _selectedIndex = index);
+  }
+
+  /// Switch to a specific tab from outside this widget.
+  void switchTab(int index) {
     setState(() => _selectedIndex = index);
   }
 
@@ -114,7 +122,7 @@ class CustomBottomNavBar extends StatelessWidget {
                 ),
               ),
 
-              // ─── Floating Scan Button ──────────────────────────
+              // ─── Floating Patients Button ──────────────────────────
               Positioned(
                 bottom: 28,
                 child: GestureDetector(
@@ -156,7 +164,7 @@ class CustomBottomNavBar extends StatelessWidget {
                       ],
                     ),
                     child: Icon(
-                      Icons.camera_alt_rounded,
+                      Icons.people_rounded,
                       color: Colors.white,
                       size: selectedIndex == 1 ? 38 : 34,
                     ),

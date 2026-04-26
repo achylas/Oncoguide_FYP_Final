@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:oncoguide_v2/core/pages/all_patients/all_patients.dart';
-import 'package:oncoguide_v2/core/pages/dashboard/dashboard_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User, Session, AuthState, AuthChangeEvent;
 
@@ -13,6 +12,8 @@ import 'core/pages/history/scan_history_screen.dart';
 import 'core/pages/new_analysis/screens/new_analysis_screen.dart';
 import 'core/pages/patients/patients_hub_screen.dart';
 import 'core/pages/quickaccess/addpatient.dart';
+import 'core/utils/nav_bar.dart';
+export 'core/utils/nav_bar.dart' show mainScreenKey;
 import 'core/widgets/resuable_top_bar.dart' show SettingsScreen;
 import 'firebase_options.dart';
 
@@ -76,9 +77,9 @@ class AuthGate extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        // Logged in — go to dashboard
+        // Logged in — go to main screen (has nav bar)
         if (snapshot.hasData && snapshot.data != null) {
-          return const DashboardScreen();
+          return MainScreen(key: mainScreenKey);
         }
         // Not logged in — show splash then login
         return const LandingPage();

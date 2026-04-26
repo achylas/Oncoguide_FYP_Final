@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:oncoguide_v2/core/conts/colors.dart';
 import 'package:oncoguide_v2/core/pages/patients/patient_profile_screen.dart';
-import 'package:oncoguide_v2/core/widgets/resuable_top_bar.dart';
 
 class PatientsHubScreen extends StatefulWidget {
   const PatientsHubScreen({super.key});
@@ -37,14 +36,49 @@ class _PatientsHubScreenState extends State<PatientsHubScreen>
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0E21) : const Color(0xFFF0F2F8),
-      appBar: ReusableTopBar(
-        title: 'Patients',
-        subtitle: const Text('All patient records'),
-        showBackButton: true,
-        showSettingsButton: false,
-      ),
       body: Column(
         children: [
+          // ── Inline header (no separate AppBar) ─────────────────────────
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFFFF6F91), Color(0xFF6C63FF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.people_rounded, color: Colors.white, size: 24),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Patients',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              )),
+                          Text('All patient records',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white70,
+                              )),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
           // ── Search bar ──────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),

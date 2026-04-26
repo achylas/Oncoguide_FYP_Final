@@ -17,141 +17,181 @@ class CompactReportCard extends StatelessWidget {
     required this.index,
   });
 
-  Color getStatusColor() {
+  Color _statusColor() {
     switch (status) {
-      case "Malignant":
-        return AppColors.danger;
-      case "Benign":
-        return AppColors.warning;
+      case 'Malignant':
+        return const Color(0xFFEF4444);
+      case 'High Risk':
+        return const Color(0xFFEF4444);
+      case 'Benign':
+        return const Color(0xFFF59E0B);
+      case 'Normal':
+        return const Color(0xFF10B981);
       default:
-        return AppColors.success;
+        return const Color(0xFF10B981);
     }
   }
 
-  IconData getStatusIcon() {
+  IconData _statusIcon() {
     switch (status) {
-      case "Malignant":
+      case 'Malignant':
+      case 'High Risk':
         return Icons.warning_rounded;
-      case "Benign":
+      case 'Benign':
         return Icons.info_rounded;
       default:
         return Icons.check_circle_rounded;
     }
   }
 
+  bool get _isMammo => reportName.toLowerCase().contains('mammo');
+
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = getStatusColor();
+    final isDark  = Theme.of(context).brightness == Brightness.dark;
+    final color   = _statusColor();
+    final accent  = _isMammo ? const Color(0xFFFF6F91) : const Color(0xFF6C63FF);
 
     return Container(
-      width: 200,
-      margin: EdgeInsets.only(right: 12, left: index == 0 ? 0 : 0),
-      padding: const EdgeInsets.all(12),
+      width: 190,
+      margin: const EdgeInsets.only(right: 12),
       decoration: BoxDecoration(
-        color: AppColors.getCardBackground(context),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isDark
-              ? color.withOpacity(0.4)
-              : color.withOpacity(0.2),
-          width: 1,
-        ),
-        boxShadow: isDark
-            ? null
-            : [
+        color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
           BoxShadow(
-            color: color.withOpacity(0.08),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
+            color: accent.withOpacity(isDark ? 0.12 : 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top row: icon + status
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [color, color.withOpacity(0.7)],
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.description_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
+          // Gradient top strip
+          Container(
+            height: 4,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [accent, accent.withOpacity(0.6)],
               ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? color.withOpacity(0.25)
-                      : color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Icon + status badge
+                Row(
                   children: [
-                    Icon(getStatusIcon(), size: 12, color: color),
-                    const SizedBox(width: 4),
-                    Text(
-                      status,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: color,
+                    Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [accent, accent.withOpacity(0.7)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    )
+                      child: Icon(
+                        _isMammo
+                            ? Icons.monitor_heart_outlined
+                            : Icons.waves_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(isDark ? 0.2 : 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: color.withOpacity(0.4), width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(_statusIcon(), size: 10, color: color),
+                          const SizedBox(width: 3),
+                          Text(
+                            status,
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: color,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // Report & patient info
-          Text(
-            reportName,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: AppColors.getTextPrimary(context),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            patientName,
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.getTextSecondary(context),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Date & arrow
-          Row(
-            children: [
-              Icon(
-                Icons.calendar_today_rounded,
-                size: 12,
-                color: AppColors.getTextSecondary(context),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                date,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppColors.getTextSecondary(context),
+                const SizedBox(height: 12),
+
+                // Report type
+                Text(
+                  reportName,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.getTextPrimary(context),
+                    letterSpacing: -0.2,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              Icon(Icons.arrow_forward_ios_rounded, size: 12, color: color),
-            ],
+                const SizedBox(height: 3),
+                Text(
+                  patientName,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.getTextSecondary(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 10),
+
+                Divider(
+                  height: 1,
+                  color: AppColors.getBorder(context).withOpacity(0.5),
+                ),
+                const SizedBox(height: 10),
+
+                // Date
+                Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today_rounded,
+                      size: 11,
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        date,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.getTextSecondary(context),
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 11,
+                      color: accent,
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),

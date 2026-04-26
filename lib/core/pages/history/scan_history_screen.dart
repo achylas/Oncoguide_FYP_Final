@@ -135,6 +135,10 @@ class _AllReportsTab extends StatelessWidget {
               return const Center(child: CircularProgressIndicator());
             }
 
+            if (mammoSnap.hasError || usSnap.hasError) {
+              return _indexErrorState(context, (mammoSnap.error ?? usSnap.error).toString());
+            }
+
             final mammoDocs = mammoSnap.data?.docs ?? [];
             final usDocs    = usSnap.data?.docs ?? [];
 
@@ -197,6 +201,9 @@ class _StreamTab extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return _indexErrorState(context, snapshot.error.toString());
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return _emptyState(context, emptyLabel, emptyIcon);
@@ -442,4 +449,70 @@ class _TabDef {
   final IconData icon;
   final Color? color;
   const _TabDef(this.label, this.icon, this.color);
+}
+
+Widget _indexErrorState(BuildContext context, String error) {
+  final urlMatch = RegExp(r'https://console\.firebase\.google\.com\S+').firstMatch(error);
+  final indexUrl = urlMatch?.group(0);
+  final isDark   = Theme.of(context).brightness == Brightness.dark;
+
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.build_circle_outlined, color: Colors.orange, size: 40),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Database Index Building',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppColors.getTextPrimary(context),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'A Firestore index is required. Run the command below in the oncoguide_v2 folder, then wait a few minutes.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.getTextSecondary(context)),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1A1D2E) : const Color(0xFFF0F2F8),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.orange.withOpacity(0.3)),
+            ),
+            child: const SelectableText(
+              'firebase deploy --only firestore:indexes',
+              style: TextStyle(
+                fontSize: 12,
+                fontFamily: 'monospace',
+                color: Colors.orange,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (indexUrl != null) ...[
+            const SizedBox(height: 12),
+            SelectableText(
+              indexUrl,
+              style: const TextStyle(fontSize: 10, color: Colors.blue),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
 }

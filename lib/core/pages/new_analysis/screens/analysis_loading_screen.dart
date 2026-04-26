@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:oncoguide_v2/core/pages/new_analysis/screens/new_analysis_screen.dart';
 import 'package:oncoguide_v2/services/api_service.dart';
@@ -13,12 +14,15 @@ class AnalysisLoadingScreen extends StatefulWidget {
   final Map<String, dynamic> selectedPatient;
   final Map<ImagingType, File?> uploadedImages;
   final Set<ImagingType> selectedImagingTypes;
+  /// When true, skip the gatekeeper validation step (images already validated by radiologist).
+  final bool skipValidation;
 
   const AnalysisLoadingScreen({
     super.key,
     required this.selectedPatient,
     required this.uploadedImages,
     required this.selectedImagingTypes,
+    this.skipValidation = false,
   });
 
   @override
@@ -33,9 +37,19 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
   bool _hasError = false;
   String _errorMessage = '';
 
+  // Guard: ensures the pipeline (and report save) runs exactly once
+  bool _pipelineStarted = false;
+
   // Pulse animation for the spinner ring
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
+
+  // Image carousel animation
+  late AnimationController _imageController;
+  late Animation<double> _imageFadeAnimation;
+  int _activeImageIndex = 0;
+  late List<MapEntry<ImagingType, File>> _imagesToShow;
+  late List<String> _imageLabels;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
@@ -51,23 +65,71 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // Kick off the pipeline after the first frame
+    // Build list of uploaded images to cycle through
+    _imagesToShow = widget.uploadedImages.entries
+        .where((e) => e.value != null)
+        .map((e) => MapEntry(e.key, e.value!))
+        .toList();
+
+    _imageLabels = _imagesToShow.map((e) {
+      switch (e.key) {
+        case ImagingType.mammogram:    return 'Mammogram (CC)';
+        case ImagingType.mammogramMlo: return 'Mammogram (MLO)';
+        case ImagingType.ultrasound:   return 'Ultrasound';
+        default:                       return 'Scan';
+      }
+    }).toList();
+
+    // Fade animation for image transitions
+    _imageController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _imageFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _imageController, curve: Curves.easeIn),
+    );
+    if (_imagesToShow.isNotEmpty) {
+      _imageController.forward();
+      _startImageCycling();
+    }
+
+    // Kick off the pipeline after the first frame — guarded against double-run
     WidgetsBinding.instance.addPostFrameCallback((_) => _runPipeline());
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
+    _imageController.dispose();
     super.dispose();
+  }
+
+  // ── Image cycling ──────────────────────────────────────────────────────────
+  void _startImageCycling() {
+    if (_imagesToShow.length <= 1) return;
+    Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      _imageController.reverse().then((_) {
+        if (!mounted) return;
+        setState(() {
+          _activeImageIndex = (_activeImageIndex + 1) % _imagesToShow.length;
+        });
+        _imageController.forward().then((_) => _startImageCycling());
+      });
+    });
   }
 
   // ── Pipeline ───────────────────────────────────────────────────────────────
   Future<void> _runPipeline() async {
-    // ── Step 1a: Mammogram validation ───────────────────────────────────
+    // Guard: only run once even if the widget rebuilds
+    if (_pipelineStarted) return;
+    _pipelineStarted = true;
+    // ── Step 1a: Mammogram validation (skip if images from DB) ──────────
     final mammogramFile = widget.uploadedImages[ImagingType.mammogram];
     MammogramValidationResult? validationResult;
 
-    if (widget.selectedImagingTypes.contains(ImagingType.mammogram) &&
+    if (!widget.skipValidation &&
+        widget.selectedImagingTypes.contains(ImagingType.mammogram) &&
         mammogramFile != null) {
       _setStep(_Step.validating, 'Validating mammogram image…');
 
@@ -91,11 +153,12 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
       }
     }
 
-    // ── Step 1b: Ultrasound validation ───────────────────────────────────
+    // ── Step 1b: Ultrasound validation (skip if images from DB) ─────────
     final ultrasoundFile = widget.uploadedImages[ImagingType.ultrasound];
     MammogramValidationResult? usValidationResult;
 
-    if (widget.selectedImagingTypes.contains(ImagingType.ultrasound) &&
+    if (!widget.skipValidation &&
+        widget.selectedImagingTypes.contains(ImagingType.ultrasound) &&
         ultrasoundFile != null) {
       _setStep(_Step.validating, 'Validating ultrasound image…');
 
@@ -290,6 +353,12 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // ── Uploaded image preview ──────────────────────────────────────
+            if (_imagesToShow.isNotEmpty) ...[
+              _buildImagePreview(isDark),
+              const SizedBox(height: 32),
+            ],
+
             // Animated spinner with icon inside
             ScaleTransition(
               scale: _pulseAnimation,
@@ -332,8 +401,12 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
             // Step indicators
             _buildStepRow(
               icon: Icons.shield_outlined,
-              label: 'Image Validation',
-              state: _stepState(_Step.validating),
+              label: widget.skipValidation
+                  ? 'Pre-validated by Radiologist'
+                  : 'Image Validation',
+              state: widget.skipValidation
+                  ? _StepState.done
+                  : _stepState(_Step.validating),
               isDark: isDark,
             ),
             const SizedBox(height: 16),
@@ -364,6 +437,181 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImagePreview(bool isDark) {
+    final entry = _imagesToShow[_activeImageIndex];
+    final label = _imageLabels[_activeImageIndex];
+    final file  = entry.value;
+
+    return Column(
+      children: [
+        // Label + dot indicators
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6F91).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: const Color(0xFFFF6F91).withOpacity(0.4),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.image_rounded,
+                      size: 13, color: Color(0xFFFF6F91)),
+                  const SizedBox(width: 5),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFFF6F91),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Image card
+        FadeTransition(
+          opacity: _imageFadeAnimation,
+          child: Container(
+            width: double.infinity,
+            height: 220,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: const Color(0xFFFF6F91).withOpacity(0.35),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFF6F91).withOpacity(0.2),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // The actual image — web uses Image.network (blob URL),
+                  // mobile uses Image.file
+                  kIsWeb
+                      ? Image.network(
+                          file.path,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              _imagePlaceholder(isDark),
+                        )
+                      : Image.file(
+                          file,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              _imagePlaceholder(isDark),
+                        ),
+
+                  // Subtle dark gradient overlay at bottom
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      height: 60,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            Colors.black.withOpacity(0.55),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // "Analysing…" badge
+                  Positioned(
+                    bottom: 10,
+                    left: 12,
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Analysing…',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // Dot indicators (only when multiple images)
+        if (_imagesToShow.length > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(_imagesToShow.length, (i) {
+              final active = i == _activeImageIndex;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: active ? 18 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: active
+                      ? const Color(0xFFFF6F91)
+                      : (isDark
+                          ? const Color(0xFF4A4D6A)
+                          : Colors.grey[300]),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
+            }),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _imagePlaceholder(bool isDark) {
+    return Container(
+      color: isDark ? const Color(0xFF1A1D2E) : const Color(0xFFF0F2F8),
+      child: Center(
+        child: Icon(
+          Icons.image_not_supported_outlined,
+          size: 40,
+          color: isDark ? const Color(0xFF4A4D6A) : Colors.grey[400],
         ),
       ),
     );

@@ -18,176 +18,157 @@ class EnhancedTopBar extends StatefulWidget {
 }
 
 class _EnhancedTopBarState extends State<EnhancedTopBar> {
-  String _doctorName = "Doctor";
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  String _doctorName = 'Doctor';
+  String? _photoUrl;
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadDoctorName();
+    _loadDoctorData();
   }
 
-  Future<void> _loadDoctorName() async {
+  Future<void> _loadDoctorData() async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return;
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) { setState(() => _isLoading = false); return; }
 
-      final doc = await _firestore.collection('doctors').doc(user.uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('doctors')
+          .doc(user.uid)
+          .get();
+
       if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
         setState(() {
-          _doctorName = doc.data()!['name'] ?? "Doctor";
-          _isLoading = false;
+          _doctorName = data['name'] ?? 'Doctor';
+          _photoUrl   = data['photoUrl'] as String?;
+          _isLoading  = false;
         });
+      } else {
+        setState(() => _isLoading = false);
       }
     } catch (e) {
       setState(() => _isLoading = false);
-      debugPrint("Error loading doctor name: $e");
+      debugPrint('EnhancedTopBar: $e');
     }
+  }
+
+  String _greeting() {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  String get _firstName {
+    final parts = _doctorName.trim().split(' ');
+    return parts.isNotEmpty ? parts.first : _doctorName;
+  }
+
+  String get _initials {
+    final parts = _doctorName.trim().split(' ');
+    if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    return _doctorName.isNotEmpty ? _doctorName[0].toUpperCase() : 'D';
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isDark
-              ? [
-            AppColors.surfaceDark.withOpacity(0.5),
-            AppColors.cardBackgroundDark.withOpacity(0.3),
-          ]
-              : [
-            AppColors.primary.withOpacity(0.08),
-            AppColors.primaryLight.withOpacity(0.05),
-          ],
-        ),
-      ),
-      child: SafeArea(
-        bottom: false,
+    return SafeArea(
+      bottom: false,
+      child: SizedBox(
+        height: 72,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           child: Row(
             children: [
+              // ── Avatar ──────────────────────────────────────────────────
               GestureDetector(
                 onTap: widget.onProfileTap,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: AppColors.getPrimaryGradient(context),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: AppColors.getCardBackground(context),
-                      shape: BoxShape.circle,
-                    ),
-                    child: CircleAvatar(
-                      radius: 22,
-                      backgroundColor: isDark
-                          ? AppColors.surfaceDark
-                          : AppColors.primaryLight.withOpacity(0.2),
-                      child: Icon(
-                        Icons.person,
-                        color: AppColors.primary,
-                        size: 24,
-                      ),
-                    ),
-                  ),
-                ),
+                child: _buildAvatar(),
               ),
               const SizedBox(width: 12),
+
+              // ── Greeting ─────────────────────────────────────────────────
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                    _isLoading
+                        ? SizedBox(
+                            height: 14,
+                            width: 160,
+                            child: LinearProgressIndicator(
+                              color: AppColors.primary,
+                              backgroundColor: AppColors.getBorder(context),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          )
+                        : Text(
+                            '${_greeting()}, Dr. $_firstName',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.getTextPrimary(context),
+                              letterSpacing: -0.3,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                    const SizedBox(height: 2),
                     Text(
-                      "Welcome back,",
+                      'OncoGuide AI',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 12,
                         color: AppColors.getTextSecondary(context),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    _isLoading
-                        ? SizedBox(
-                      height: 18,
-                      width: 100,
-                      child: LinearProgressIndicator(
-                        color: AppColors.primary,
-                        backgroundColor: AppColors.getBorder(context),
-                      ),
-                    )
-                        : Text(
-                      _doctorName,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.getTextPrimary(context),
-                        letterSpacing: -0.5,
-                      ),
-                    ),
                   ],
                 ),
               ),
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.getCardBackground(context),
-                  borderRadius: BorderRadius.circular(12),
-                  border: isDark
-                      ? Border.all(color: AppColors.borderDark, width: 1)
-                      : null,
-                  boxShadow: isDark
-                      ? null
-                      : [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+
+              // ── Settings ─────────────────────────────────────────────────
+              IconButton(
+                onPressed: () => Navigator.pushNamed(context, '/settings'),
+                icon: Icon(
+                  Icons.settings_outlined,
+                  color: AppColors.getTextPrimary(context),
+                  size: 24,
                 ),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: widget.onNotificationTap,
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Stack(
-                      children: [
-                        IconButton(
-                          icon: Icon(
-                            Icons.settings,
-                            color: AppColors.getTextPrimary(context),
-                          ),
-                          onPressed: () {
-                            Navigator.pushNamed(context, '/settings');
-                          },
-                        ),
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: AppColors.danger,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                tooltip: 'Settings',
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar() {
+    if (_photoUrl != null && _photoUrl!.isNotEmpty) {
+      return CircleAvatar(
+        radius: 24,
+        backgroundImage: NetworkImage(_photoUrl!),
+        backgroundColor: AppColors.primary.withOpacity(0.15),
+      );
+    }
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [Color(0xFFFF6F91), Color(0xFF6C63FF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        _initials,
+        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
       ),
     );
   }

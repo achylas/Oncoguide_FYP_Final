@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:oncoguide_v2/core/utils/nav_bar.dart';
 
+// ── Issue 2 fix: "All Patients" switches to the nav bar Patients tab (index 1)
+// instead of pushing a new route (which would lose the bottom nav bar).
 class EnhancedQuickActions extends StatelessWidget {
   const EnhancedQuickActions({super.key});
 
@@ -7,56 +10,35 @@ class EnhancedQuickActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final actions = [
       _ActionData(
-        title: "Add Patient",
-        icon: Icons.person_add_rounded,
-        route: '/add_patient',
-        startColor: const Color(0xFFFF6F91),
-        endColor: const Color(0xFFFF8FA3),
+        title: 'All Patients',
+        subtitle: 'View records',
+        icon: Icons.people_rounded,
+        onTap: () {
+          // Switch to Patients tab (index 1) in the nav bar
+          mainScreenKey.currentState?.switchTab(1);
+        },
+        colors: [const Color(0xFF6C63FF), const Color(0xFF9C8FFF)],
       ),
       _ActionData(
-        title: "All Patients",
-        icon: Icons.person,
-        route: '/patients_hub',
-        startColor: const Color(0xFF6C63FF),
-        endColor: const Color(0xFF8B84FF),
-      ),
-      _ActionData(
-        title: "New Scan",
-        icon: Icons.document_scanner_rounded,
-        route: '/new_analysis',
-        startColor: const Color(0xFF6C63FF),
-        endColor: const Color(0xFF8B84FF),
-      ),
-      _ActionData(
-        title: "Reports",
+        title: 'Reports',
+        subtitle: 'Scan history',
         icon: Icons.assessment_rounded,
-        route: '/scan_history',
-        startColor: const Color(0xFFFFA726),
-        endColor: const Color(0xFFFFB74D),
+        onTap: () => Navigator.pushNamed(context, '/scan_history'),
+        colors: [const Color(0xFFFF6F91), const Color(0xFFFF9AB0)],
       ),
     ];
 
-    return SizedBox(
-      height: 100,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: actions.length,
-        itemBuilder: (context, i) {
-          final action = actions[i];
-          return Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: _CompactActionChip(
-              title: action.title,
-              icon: action.icon,
-              startColor: action.startColor,
-              endColor: action.endColor,
-              onTap: action.route != null
-                  ? () => Navigator.pushNamed(context, action.route!)
-                  : null,
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: actions.map((a) {
+          return Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(right: a == actions.last ? 0 : 12),
+              child: _ActionTile(action: a),
             ),
           );
-        },
+        }).toList(),
       ),
     );
   }
@@ -64,84 +46,89 @@ class EnhancedQuickActions extends StatelessWidget {
 
 class _ActionData {
   final String title;
+  final String subtitle;
   final IconData icon;
-  final String? route;
-  final Color startColor;
-  final Color endColor;
+  final VoidCallback onTap;
+  final List<Color> colors;
 
-  _ActionData({
+  const _ActionData({
     required this.title,
+    required this.subtitle,
     required this.icon,
-    this.route,
-    required this.startColor,
-    required this.endColor,
+    required this.onTap,
+    required this.colors,
   });
 }
 
-class _CompactActionChip extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Color startColor;
-  final Color endColor;
-  final VoidCallback? onTap;
-
-  const _CompactActionChip({
-    required this.title,
-    required this.icon,
-    required this.startColor,
-    required this.endColor,
-    this.onTap,
-  });
+class _ActionTile extends StatelessWidget {
+  final _ActionData action;
+  const _ActionTile({required this.action});
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        onTap: action.onTap,
+        borderRadius: BorderRadius.circular(18),
         child: Container(
-          width: 140,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: isDark
-                  ? [
-                startColor.withOpacity(0.8),
-                endColor.withOpacity(0.8),
-              ]
-                  : [startColor, endColor],
+              colors: action.colors,
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: isDark
-                ? null
-                : [
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
               BoxShadow(
-                color: startColor.withOpacity(0.35),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
+                color: action.colors.first.withOpacity(0.35),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Row(
             children: [
-              Icon(icon, color: Colors.white, size: 28),
-              const SizedBox(height: 6),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  height: 1.1,
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                textAlign: TextAlign.center,
+                child: Icon(action.icon, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      action.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      action.subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.75),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: Colors.white.withOpacity(0.7),
+                size: 14,
               ),
             ],
           ),
