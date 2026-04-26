@@ -52,6 +52,29 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
   }
 
   void nextStep() {
+    // Validate current step before advancing
+    String? error;
+    if (currentStep == 0) {
+      if (nameController.text.trim().isEmpty) error = 'Full name is required';
+      else if (ageController.text.trim().isEmpty) error = 'Age is required';
+      else if (weightController.text.trim().isEmpty) error = 'Weight is required';
+      else if (imcController.text.trim().isEmpty) error = 'BMI is required';
+    } else if (currentStep == 1) {
+      if (menarcheAgeController.text.trim().isEmpty) error = 'Menarche age is required';
+      else if (childrenController.text.trim().isEmpty) error = 'Number of children is required';
+      else if (breastfeedingController.text.trim().isEmpty) error = 'Breastfeeding duration is required';
+      else if (biopsiesController.text.trim().isEmpty) error = 'Number of biopsies is required';
+    }
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(error),
+        backgroundColor: AppColors.danger,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+      ));
+      return;
+    }
     if (currentStep < 2) {
       setState(() => currentStep++);
       _pageController.nextPage(

@@ -13,7 +13,7 @@ import 'core/pages/history/scan_history_screen.dart';
 import 'core/pages/new_analysis/screens/new_analysis_screen.dart';
 import 'core/pages/patients/patients_hub_screen.dart';
 import 'core/pages/quickaccess/addpatient.dart';
-import 'core/pages/settings.dart';
+import 'core/widgets/resuable_top_bar.dart' show SettingsScreen;
 import 'firebase_options.dart';
 
 Future<void> main() async {

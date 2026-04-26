@@ -2,6 +2,17 @@ import 'package:flutter/material.dart';
 
 import 'colors.dart';
 
+// ── Theme Provider ─────────────────────────────────────────────────────────────
+
+class ThemeProvider extends ChangeNotifier {
+  bool isDarkMode = false;
+
+  void toggleTheme(bool value) {
+    isDarkMode = value;
+    notifyListeners();
+  }
+}
+
 class AppTheme {
   // Light Theme (already defined)
   static final lightTheme = ThemeData(

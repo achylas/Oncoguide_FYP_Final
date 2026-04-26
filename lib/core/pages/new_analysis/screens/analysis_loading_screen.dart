@@ -290,7 +290,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Animated spinner
+            // Animated spinner with icon inside
             ScaleTransition(
               scale: _pulseAnimation,
               child: Container(
@@ -311,11 +311,19 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
                     ),
                   ],
                 ),
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 3,
-                  ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 3,
+                    ),
+                    Icon(
+                      Icons.psychology_rounded,
+                      color: Colors.white.withOpacity(0.85),
+                      size: 36,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -426,57 +434,60 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
 
   Widget _buildErrorView(bool isDark) {
     return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.error_outline_rounded,
-                  color: Colors.red, size: 56),
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              shape: BoxShape.circle,
             ),
-            const SizedBox(height: 24),
-            Text(
-              'Analysis Failed',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: AppColors.getTextPrimary(context),
-              ),
+            child: const Icon(Icons.error_outline_rounded,
+                color: Colors.red, size: 56),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Analysis Failed',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: AppColors.getTextPrimary(context),
             ),
-            const SizedBox(height: 12),
-            Text(
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.red.withOpacity(0.2)),
+            ),
+            child: Text(
               _errorMessage,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 height: 1.6,
-                color: isDark
-                    ? const Color(0xFFB0B3C5)
-                    : Colors.grey[600],
+                color: isDark ? const Color(0xFFB0B3C5) : Colors.grey[700],
               ),
             ),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.arrow_back_rounded),
-              label: const Text('Go Back'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 28, vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
+          ),
+          const SizedBox(height: 32),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back_rounded),
+            label: const Text('Go Back & Fix'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../conts/colors.dart';
+import '../conts/theme.dart';
+import '../pages/settings_subpages.dart';
 
 class ReusableTopBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
@@ -26,7 +30,7 @@ class ReusableTopBar extends StatelessWidget implements PreferredSizeWidget {
   }) : super(key: key);
 
   @override
-  Size get preferredSize => Size.fromHeight(subtitle != null ? 72 : 60);
+  Size get preferredSize => Size.fromHeight(subtitle != null ? 58 : 48);
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +58,7 @@ class ReusableTopBar extends StatelessWidget implements PreferredSizeWidget {
       child: SafeArea(
         bottom: false,
         child: Container(
-          height: subtitle != null ? 72 : 60,
+          height: subtitle != null ? 58 : 48,
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: Row(
             children: [
@@ -164,12 +168,15 @@ class ReusableTopBar extends StatelessWidget implements PreferredSizeWidget {
 // ═══════════════════════════════════════════════════════════════════
 
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.getBackground(context),
       appBar: const ReusableTopBar(
         title: 'Settings',
         showSettingsButton: false,
@@ -177,7 +184,7 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Header Card
+          // ── Header card ──────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -236,7 +243,83 @@ class SettingsScreen extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // Settings Sections
+          // ── Appearance ───────────────────────────────────────────────────
+          _buildSectionTitle('Appearance'),
+          const SizedBox(height: 12),
+
+          // Dark mode toggle — the only live functional setting
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.cardBackgroundDark : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppColors.getBorder(context).withOpacity(0.3),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    themeProvider.isDarkMode
+                        ? Icons.dark_mode_rounded
+                        : Icons.light_mode_rounded,
+                    color: AppColors.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Dark Mode',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.getTextPrimary(context),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        themeProvider.isDarkMode
+                            ? 'Dark theme is active'
+                            : 'Light theme is active',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.getTextSecondary(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: themeProvider.isDarkMode,
+                  onChanged: themeProvider.toggleTheme,
+                  activeColor: AppColors.primary,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // ── Account ──────────────────────────────────────────────────────
           _buildSectionTitle('Account'),
           const SizedBox(height: 12),
           _buildSettingCard(
@@ -244,86 +327,71 @@ class SettingsScreen extends StatelessWidget {
             icon: Icons.person_outline,
             title: 'Profile',
             subtitle: 'Manage your account',
-            onTap: () {
-              // Navigate to profile
-            },
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const ProfileSettingsPage())),
           ),
           _buildSettingCard(
             context,
             icon: Icons.lock_outline,
             title: 'Privacy & Security',
-            subtitle: 'Password and security settings',
-            onTap: () {
-              // Navigate to privacy
-            },
+            subtitle: 'Change password',
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const PrivacySecurityPage())),
           ),
 
           const SizedBox(height: 24),
 
+          // ── Preferences ──────────────────────────────────────────────────
           _buildSectionTitle('Preferences'),
           const SizedBox(height: 12),
           _buildSettingCard(
             context,
             icon: Icons.notifications_outlined,
             title: 'Notifications',
-            subtitle: 'Configure alerts and reminders',
-            onTap: () {
-              // Navigate to notifications
-            },
-          ),
-          _buildSettingCard(
-            context,
-            icon: Icons.palette_outlined,
-            title: 'Appearance',
-            subtitle: 'Theme and display options',
-            onTap: () {
-              // Navigate to appearance
-            },
+            subtitle: 'Coming soon',
+            onTap: () {},
           ),
           _buildSettingCard(
             context,
             icon: Icons.language_outlined,
             title: 'Language',
             subtitle: 'English (US)',
-            onTap: () {
-              // Navigate to language
-            },
+            onTap: () {},
           ),
 
           const SizedBox(height: 24),
 
+          // ── Support ──────────────────────────────────────────────────────
           _buildSectionTitle('Support'),
           const SizedBox(height: 12),
           _buildSettingCard(
             context,
             icon: Icons.help_outline,
             title: 'Help & Support',
-            subtitle: 'Get assistance and FAQs',
-            onTap: () {
-              // Navigate to help
-            },
+            subtitle: 'FAQs and guidance',
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const HelpSupportPage())),
           ),
           _buildSettingCard(
             context,
             icon: Icons.feedback_outlined,
             title: 'Send Feedback',
             subtitle: 'Share your thoughts',
-            onTap: () {
-              // Navigate to feedback
-            },
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const SendFeedbackPage())),
           ),
           _buildSettingCard(
             context,
             icon: Icons.info_outline,
             title: 'About',
             subtitle: 'Version 1.0.0',
-            onTap: () {
-              // Navigate to about
-            },
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const AboutPage())),
           ),
 
           const SizedBox(height: 24),
 
+          // ── Account Actions ──────────────────────────────────────────────
           _buildSectionTitle('Account Actions'),
           const SizedBox(height: 12),
           _buildSettingCard(
@@ -332,9 +400,7 @@ class SettingsScreen extends StatelessWidget {
             title: 'Logout',
             subtitle: 'Sign out of your account',
             iconColor: AppColors.danger,
-            onTap: () {
-              _showLogoutDialog(context);
-            },
+            onTap: () => _showLogoutDialog(context),
           ),
 
           const SizedBox(height: 40),
@@ -359,13 +425,14 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Widget _buildSettingCard(
-      BuildContext context, {
-        required IconData icon,
-        required String title,
-        required String subtitle,
-        required VoidCallback onTap,
-        Color? iconColor,
-      }) {
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    Color? iconColor,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       child: Material(
@@ -376,10 +443,10 @@ class SettingsScreen extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: isDark ? AppColors.cardBackgroundDark : Colors.white,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: AppColors.border.withOpacity(0.3),
+                color: AppColors.getBorder(context).withOpacity(0.3),
                 width: 1,
               ),
               boxShadow: [
@@ -411,18 +478,18 @@ class SettingsScreen extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: AppColors.getTextPrimary(context),
                         ),
                       ),
                       const SizedBox(height: 3),
                       Text(
                         subtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.textSecondary,
+                          color: AppColors.getTextSecondary(context),
                         ),
                       ),
                     ],
@@ -431,7 +498,7 @@ class SettingsScreen extends StatelessWidget {
                 Icon(
                   Icons.arrow_forward_ios_rounded,
                   size: 16,
-                  color: AppColors.textTertiary,
+                  color: AppColors.getTextTertiary(context),
                 ),
               ],
             ),
@@ -444,29 +511,27 @@ class SettingsScreen extends StatelessWidget {
   void _showLogoutDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: const Text(
-          'Logout',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: const Text('Are you sure you want to logout?'),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text('Are you sure you want to sign out?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Go back
-              // Add logout logic here
+            onPressed: () async {
+              Navigator.pop(ctx); // close dialog
+              await FirebaseAuth.instance.signOut();
+              if (context.mounted) {
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                  '/login',
+                  (_) => false,
+                );
+              }
             },
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.danger,
-            ),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
             child: const Text('Logout'),
           ),
         ],

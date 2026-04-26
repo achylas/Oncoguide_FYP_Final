@@ -20,12 +20,33 @@ class BottomCTA extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bool canProceed = tabularAdded && selectedImaging.isNotEmpty;
 
+    // Check if CC is selected but MLO is missing (density requires both)
+    final bool ccSelected  = selectedImaging.contains(ImagingType.mammogram);
+    final bool mloSelected = selectedImaging.contains(ImagingType.mammogramMlo);
+    final bool needsMlo    = ccSelected && !mloSelected;
+    final bool needsCc     = mloSelected && !ccSelected;
+    final bool mammogramIncomplete = needsMlo || needsCc;
+
+    // Can only start if tabular added, at least one imaging, and mammogram pair is complete
+    final bool readyToStart = canProceed && !mammogramIncomplete;
+
+    String hintMessage = '';
+    if (!tabularAdded) {
+      hintMessage = 'Add clinical data to continue';
+    } else if (selectedImaging.isEmpty) {
+      hintMessage = 'Select at least one imaging type';
+    } else if (needsMlo) {
+      hintMessage = 'Upload MLO view — both CC and MLO are required for mammogram analysis';
+    } else if (needsCc) {
+      hintMessage = 'Upload CC view — both CC and MLO are required for mammogram analysis';
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!canProceed)
+          if (!readyToStart)
             Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(14),
@@ -56,9 +77,7 @@ class BottomCTA extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      !tabularAdded
-                          ? "Add clinical data to continue"
-                          : "Select at least one imaging type",
+                      hintMessage,
                       style: TextStyle(
                         fontSize: 13,
                         color: AppColors.getTextPrimary(context),
@@ -73,30 +92,30 @@ class BottomCTA extends StatelessWidget {
             width: double.infinity,
             height: 62,
             decoration: BoxDecoration(
-              gradient: canProceed
+              gradient: readyToStart
                   ? const LinearGradient(
-                  colors: [Color(0xFFFF6F91), Color(0xFFFF8FA3)])
+                      colors: [Color(0xFFFF6F91), Color(0xFFFF8FA3)])
                   : null,
-              color: canProceed
+              color: readyToStart
                   ? null
                   : (isDark
-                  ? const Color(0xFF2A2D47)
-                  : AppColors.border),
+                      ? const Color(0xFF2A2D47)
+                      : AppColors.border),
               borderRadius: BorderRadius.circular(18),
-              boxShadow: canProceed
+              boxShadow: readyToStart
                   ? [
-                BoxShadow(
-                  color: const Color(0xFFFF6F91).withOpacity(0.4),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ]
+                      BoxShadow(
+                        color: const Color(0xFFFF6F91).withOpacity(0.4),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ]
                   : null,
             ),
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: canProceed ? onStartAnalysis : null,
+                onTap: readyToStart ? onStartAnalysis : null,
                 borderRadius: BorderRadius.circular(18),
                 child: Center(
                   child: Row(
@@ -104,18 +123,18 @@ class BottomCTA extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.auto_awesome_rounded,
-                        color: canProceed
+                        color: readyToStart
                             ? Colors.white
                             : AppColors.getTextSecondary(context),
                         size: 24,
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        "Start AI Analysis",
+                        'Start AI Analysis',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
-                          color: canProceed
+                          color: readyToStart
                               ? Colors.white
                               : AppColors.getTextSecondary(context),
                           letterSpacing: -0.3,

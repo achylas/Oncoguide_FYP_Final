@@ -71,26 +71,6 @@ class ScanInputSheet extends StatelessWidget {
             },
           ),
 
-          _OptionTile(
-            icon: Icons.upload_file_outlined,
-            title: 'Upload Previous Report',
-            subtitle: 'PDF or scanned image',
-            color: AppColors.primary,
-            onTap: () {
-              Navigator.pop(context, ScanInputType.report);
-            },
-          ),
-
-          _OptionTile(
-            icon: Icons.cloud_download_outlined,
-            title: 'From Patient Records',
-            subtitle: 'Previously uploaded scans',
-            color: const Color(0xFF10B981),
-            onTap: () {
-              Navigator.pop(context, ScanInputType.fromDatabase);
-            },
-          ),
-
           const SizedBox(height: 10),
         ],
       ),
