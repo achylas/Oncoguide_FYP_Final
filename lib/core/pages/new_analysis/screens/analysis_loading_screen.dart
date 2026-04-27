@@ -139,8 +139,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
         _showError('Validation failed (${e.statusCode}): ${e.message}');
         return;
       } catch (e) {
-        _showError(
-            'Could not reach the server. Make sure the backend is running.\n\n$e');
+        _showError('Mammogram validation error:\n\n$e');
         return;
       }
 
@@ -169,8 +168,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
         _showError('Validation failed (${e.statusCode}): ${e.message}');
         return;
       } catch (e) {
-        _showError(
-            'Could not reach the server. Make sure the backend is running.\n\n$e');
+        _showError('Ultrasound validation error:\n\n$e');
         return;
       }
 
@@ -193,8 +191,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
       _showError('Prediction failed (${e.statusCode}): ${e.message}');
       return;
     } catch (e) {
-      _showError(
-          'Could not reach the server. Make sure the backend is running.\n\n$e');
+      _showError('Risk prediction error:\n\n$e');
       return;
     }
 
@@ -210,7 +207,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
         _showError('Ultrasound analysis failed (${e.statusCode}): ${e.message}');
         return;
       } catch (e) {
-        _showError('Could not reach the server.\n\n$e');
+        _showError('Ultrasound analysis error:\n\n$e');
         return;
       }
     }

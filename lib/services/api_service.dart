@@ -50,7 +50,7 @@ class TabularPredictionResult {
       probability: (json['probability'] as num).toDouble(),
       riskLabel: json['risk_label'] as String,
       riskPercentage: (json['risk_percentage'] as num).toDouble(),
-      shapValues: rawShap.map((k, v) => MapEntry(k, (v as num).toDouble())),
+      shapValues: rawShap.map((k, v) => MapEntry(k, _toDouble(v))),
       baseValue: (json['base_value'] as num).toDouble(),
     );
   }
@@ -283,44 +283,86 @@ class ApiService {
   // ─────────────────────────────────────────────
 
   /// Maps Firestore patient document fields → backend feature names.
+  /// Handles both the Flutter app's flat field names AND the web portal's
+  /// nested structure (familyHistory object, reproductive object, lifestyle object).
   static Map<String, dynamic> _buildTabularPayload(
       Map<String, dynamic> patient) {
-    double d(dynamic v, [double fallback = 0.0]) =>
-        (v as num?)?.toDouble() ?? fallback;
-    int i(dynamic v, [int fallback = 0]) =>
-        (v as num?)?.toInt() ?? fallback;
+    // Safe numeric extractors — never throw on unexpected types
+    double d(dynamic v, [double fallback = 0.0]) {
+      if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v) ?? fallback;
+      return fallback;
+    }
+    int i(dynamic v, [int fallback = 0]) {
+      if (v is num) return v.toInt();
+      if (v is bool) return v ? 1 : 0;
+      if (v is String) return int.tryParse(v) ?? fallback;
+      return fallback;
+    }
 
+    // ── Nested sub-documents (web portal schema) ──────────────────────────
     final reproductive =
         patient['reproductive'] as Map<String, dynamic>? ?? {};
     final clinical =
         patient['clinicalAssessment'] as Map<String, dynamic>? ?? {};
+    final lifestyle =
+        patient['lifestyle'] as Map<String, dynamic>? ?? {};
+
+    // ── familyHistory: web portal stores as nested object ─────────────────
+    // { hasHistory: 0|1, count: N, degree: 1|2, relations: [...] }
+    // Flutter app stores flat: family_history: 0|1
+    final famHistoryRaw = patient['familyHistory'];
+    final int famHistory;
+    final double famCount;
+    final double famDegree;
+    if (famHistoryRaw is Map) {
+      famHistory = i(famHistoryRaw['hasHistory']);
+      famCount   = d(famHistoryRaw['count']);
+      famDegree  = d(famHistoryRaw['degree']);
+    } else {
+      famHistory = i(famHistoryRaw ?? patient['family_history']);
+      famCount   = d(patient['familyHistoryCount'] ?? patient['family_history_count']);
+      famDegree  = d(patient['familyHistoryDegree'] ?? patient['family_history_degree']);
+    }
+
+    // ── reproductive: web portal uses different key names ─────────────────
+    // menarcheAge vs menarche, menopauseAge vs menopause,
+    // firstChildAge vs agefirst, breastfeedingMonths (>0 → 1) vs breastfeeding
+    final menarcheVal = reproductive['menarcheAge'] ?? reproductive['menarche'] ?? patient['menarche'];
+    final menopauseAgeVal = reproductive['menopauseAge'] ?? reproductive['menopause'] ?? patient['menopause'];
+    final firstChildVal = reproductive['firstChildAge'] ?? reproductive['ageFirstPregnancy'] ?? patient['agefirst'];
+    final childrenVal = reproductive['numberOfChildren'] ?? patient['children'];
+    final menopauseStatusVal = reproductive['menopauseStatus'] ?? patient['menopause_status'];
+    final pregnancyVal = reproductive['pregnancy'] ?? patient['pregnancy'];
+
+    // breastfeeding: web portal stores months (>0 → binary 1), Flutter stores binary
+    final breastfeedingRaw = reproductive['breastfeedingMonths'] ?? reproductive['breastfeeding'] ?? patient['breastfeeding'];
+    final int breastfeeding;
+    if (breastfeedingRaw is num && breastfeedingRaw > 1) {
+      // months value — convert to binary
+      breastfeeding = breastfeedingRaw > 0 ? 1 : 0;
+    } else {
+      breastfeeding = i(breastfeedingRaw);
+    }
+
+    // ── exercise: web portal stores in lifestyle.exerciseRegular ──────────
+    final exerciseVal = lifestyle['exerciseRegular'] ?? patient['exerciseRegular'] ?? patient['exercise_regular'];
 
     return {
-      'age': d(patient['age']),
-      'menarche': d(reproductive['menarche'] ?? patient['menarche'], 13),
-      'menopause':
-          d(reproductive['menopauseAge'] ?? patient['menopause'], 0),
-      'agefirst': d(
-          reproductive['ageFirstPregnancy'] ?? patient['agefirst'], 0),
-      'children':
-          d(reproductive['numberOfChildren'] ?? patient['children'], 0),
-      'breastfeeding':
-          i(reproductive['breastfeeding'] ?? patient['breastfeeding']),
-      'imc': d(clinical['imc'] ?? patient['imc'], 25.0),
-      'weight': d(patient['weight'], 60.0),
-      'menopause_status': i(
-          reproductive['menopauseStatus'] ?? patient['menopause_status']),
-      'pregnancy':
-          i(reproductive['pregnancy'] ?? patient['pregnancy']),
-      'family_history':
-          i(patient['familyHistory'] ?? patient['family_history']),
-      'family_history_count': d(
-          patient['familyHistoryCount'] ?? patient['family_history_count']),
-      'family_history_degree': d(
-          patient['familyHistoryDegree'] ??
-              patient['family_history_degree']),
-      'exercise_regular':
-          i(patient['exerciseRegular'] ?? patient['exercise_regular']),
+      'age':                   d(patient['age']),
+      'menarche':              d(menarcheVal, 13),
+      'menopause':             d(menopauseAgeVal, 0),
+      'agefirst':              d(firstChildVal, 0),
+      'children':              d(childrenVal, 0),
+      'breastfeeding':         breastfeeding,
+      'imc':                   d(clinical['imc'] ?? patient['imc'], 25.0),
+      'weight':                d(patient['weight'], 60.0),
+      'menopause_status':      i(menopauseStatusVal),
+      'pregnancy':             i(pregnancyVal),
+      'family_history':        famHistory,
+      'family_history_count':  famCount,
+      'family_history_degree': famDegree,
+      'exercise_regular':      i(exerciseVal),
     };
   }
 
@@ -355,8 +397,8 @@ class UltrasoundAnalysisResult {
     return UltrasoundAnalysisResult(
       prediction: json['prediction'] as String,
       predictionIndex: json['prediction_index'] as int,
-      confidence: (json['confidence'] as num).toDouble(),
-      probabilities: rawProbs.map((k, v) => MapEntry(k, (v as num).toDouble())),
+      confidence: _toDouble(json['confidence']),
+      probabilities: rawProbs.map((k, v) => MapEntry(k, _toDouble(v))),
       gradcamImage: json['gradcam_image'] as String? ?? '',
     );
   }
@@ -373,6 +415,14 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException($statusCode): $message';
+}
+
+/// Safely converts any JSON numeric value to double.
+/// Handles num, int, double, and gracefully returns 0.0 for unexpected types.
+double _toDouble(dynamic v) {
+  if (v is num) return v.toDouble();
+  if (v is String) return double.tryParse(v) ?? 0.0;
+  return 0.0;
 }
 
 /// Result from the Siamese density model (CC + MLO views).
@@ -405,8 +455,8 @@ class DensityAnalysisResult {
       densityClass:  json['density_class']  as String,
       densityLabel:  json['density_label']  as String,
       densityIndex:  json['density_index']  as int,
-      confidence:    (json['confidence']    as num).toDouble(),
-      probabilities: rawProbs.map((k, v) => MapEntry(k, (v as num).toDouble())),
+      confidence:    _toDouble(json['confidence']),
+      probabilities: rawProbs.map((k, v) => MapEntry(k, _toDouble(v))),
       gradcamImage:  json['gradcam_image']  as String? ?? '',
     );
   }
@@ -455,8 +505,8 @@ class MammogramAnalysisResult {
     return MammogramAnalysisResult(
       prediction:      json['prediction']       as String,
       predictionIndex: json['prediction_index'] as int,
-      confidence:      (json['confidence']      as num).toDouble(),
-      probabilities:   rawProbs.map((k, v) => MapEntry(k, (v as num).toDouble())),
+      confidence:      _toDouble(json['confidence']),
+      probabilities:   rawProbs.map((k, v) => MapEntry(k, _toDouble(v))),
       gradcamImage:    json['gradcam_image']    as String? ?? '',
       findingCategory: json['finding_category'] as String? ?? '',
     );

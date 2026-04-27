@@ -345,50 +345,59 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
   }
 
   List<Recommendation> _generateRecommendations(Map<String, dynamic> report) {
-    final riskLabel = report['riskLabel']?.toString() ?? '';
-    final riskPct = (report['riskPercentage'] as num?)?.toDouble() ?? 0.0;
-    final shapValues = report['shapValues'] as Map<String, dynamic>?;
-    final baseValue = (report['baseValue'] as num?)?.toDouble() ?? 0.0;
+    double safeD(dynamic v, [double fb = 0.0]) {
+      if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v) ?? fb;
+      return fb;
+    }
+    Map<String, double> safeMap(dynamic raw) {
+      if (raw is! Map) return {};
+      return Map.fromEntries(raw.entries
+          .where((e) => e.value is num || e.value is String)
+          .map((e) => MapEntry(e.key.toString(), safeD(e.value))));
+    }
+
+    final riskLabel  = report['riskLabel']?.toString() ?? '';
+    final riskPct    = safeD(report['riskPercentage']);
+    final shapRaw    = report['shapValues'];
+    final baseValue  = safeD(report['baseValue']);
 
     TabularPredictionResult? tabularResult;
-    if (riskLabel.isNotEmpty && shapValues != null) {
+    if (riskLabel.isNotEmpty && shapRaw is Map) {
       tabularResult = TabularPredictionResult(
         prediction: riskLabel == 'High Risk' ? 1 : 0,
         probability: riskPct / 100.0,
         riskPercentage: riskPct,
         riskLabel: riskLabel,
-        shapValues: shapValues.map((k, v) => MapEntry(k, (v as num).toDouble())),
+        shapValues: safeMap(shapRaw),
         baseValue: baseValue,
       );
     }
 
-    final usPrediction = report['prediction']?.toString();
-    final usConfidence = (report['confidence'] as num?)?.toDouble() ?? 0.0;
-    final probabilities = report['probabilities'] as Map<String, dynamic>?;
+    final usPrediction  = report['prediction']?.toString();
+    final usConfidence  = safeD(report['confidence']);
+    final probabilities = report['probabilities'];
 
     UltrasoundAnalysisResult? usResult;
     if (usPrediction != null && usPrediction.isNotEmpty) {
-      final predIndex = usPrediction == 'Benign'
-          ? 0
-          : usPrediction == 'Normal'
-              ? 1
-              : usPrediction == 'Malignant'
-                  ? 2
-                  : 1;
+      final predIndex = usPrediction == 'Benign' ? 0
+          : usPrediction == 'Normal' ? 1
+          : usPrediction == 'Malignant' ? 2 : 1;
       usResult = UltrasoundAnalysisResult(
         prediction: usPrediction,
         predictionIndex: predIndex,
         confidence: usConfidence,
-        probabilities: probabilities?.map((k, v) => MapEntry(k, (v as num).toDouble())) ?? {},
+        probabilities: safeMap(probabilities),
         gradcamImage: '',
       );
     }
 
-    final densityIndex = (report['densityIndex'] as num?)?.toInt();
-    final densityClass = report['densityClass']?.toString() ?? '';
-    final densityLabel = report['densityLabel']?.toString() ?? '';
-    final densityConf = (report['densityConfidence'] as num?)?.toDouble() ?? 0.0;
-    final densProbs = report['densityProbabilities'] as Map<String, dynamic>?;
+    final densityIndexRaw = report['densityIndex'];
+    final densityIndex    = densityIndexRaw is num ? densityIndexRaw.toInt() : null;
+    final densityClass    = report['densityClass']?.toString() ?? '';
+    final densityLabel    = report['densityLabel']?.toString() ?? '';
+    final densityConf     = safeD(report['densityConfidence']);
+    final densProbs       = report['densityProbabilities'];
 
     DensityAnalysisResult? densityResult;
     if (densityIndex != null && densityIndex >= 0) {
@@ -397,7 +406,7 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
         densityLabel: densityLabel,
         densityIndex: densityIndex,
         confidence: densityConf,
-        probabilities: densProbs?.map((k, v) => MapEntry(k, (v as num).toDouble())) ?? {},
+        probabilities: safeMap(densProbs),
         gradcamImage: '',
       );
     }

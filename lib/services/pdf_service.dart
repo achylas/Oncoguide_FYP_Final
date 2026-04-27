@@ -13,6 +13,13 @@ import 'storage_service.dart';
 import 'recommendation_engine.dart';
 
 class PdfService {
+  // ── Safe numeric helper ────────────────────────────────────────────────────
+  static double _safeD(dynamic v, [double fallback = 0.0]) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v) ?? fallback;
+    return fallback;
+  }
+
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /// Generate PDF, upload to Supabase, return public URL.
@@ -125,7 +132,9 @@ class PdfService {
     final shapRaw = data['shapValues'];
     Map<String, double> shapValues = {};
     if (shapRaw is Map) {
-      shapValues = shapRaw.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()));
+      shapValues = Map.fromEntries(shapRaw.entries
+          .where((e) => e.value is num || e.value is String)
+          .map((e) => MapEntry(e.key.toString(), _safeD(e.value))));
     }
     final sortedShap = shapValues.entries.toList()
       ..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
@@ -134,7 +143,9 @@ class PdfService {
     final probRaw = data['usProbabilities'] ?? data['probabilities'];
     Map<String, double> probs = {};
     if (probRaw is Map) {
-      probs = probRaw.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()));
+      probs = Map.fromEntries(probRaw.entries
+          .where((e) => e.value is num || e.value is String)
+          .map((e) => MapEntry(e.key.toString(), _safeD(e.value))));
     }
 
     // Recommendations (engine-generated, no emojis in PDF)
@@ -147,7 +158,7 @@ class PdfService {
         riskLabel: riskLabel,
         riskPercentage: riskPct,
         shapValues: shapValues,
-        baseValue: (data['baseValue'] as num?)?.toDouble() ?? 0.0,
+        baseValue: _safeD(data['baseValue']),
       );
     }
     if (usPrediction != null) {
@@ -162,20 +173,23 @@ class PdfService {
 
     // Reconstruct density result from saved Firestore fields (if present)
     DensityAnalysisResult? densityResult;
-    final densityIndex = (data['densityIndex'] as num?)?.toInt();
-    final densityClass = data['densityClass'] as String?;
-    final densityLabel = data['densityLabel'] as String?;
-    final densityConf  = (data['densityConfidence'] as num?)?.toDouble();
+    final densityIndexRaw = data['densityIndex'];
+    final densityIndex    = densityIndexRaw is num ? densityIndexRaw.toInt() : null;
+    final densityClass    = data['densityClass'] as String?;
+    final densityLabel    = data['densityLabel'] as String?;
+    final densityConf     = _safeD(data['densityConfidence']);
     if (densityIndex != null && densityClass != null && densityLabel != null) {
       final densityProbRaw = data['densityProbabilities'];
       final densityProbs = densityProbRaw is Map
-          ? densityProbRaw.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()))
+          ? Map<String, double>.fromEntries(densityProbRaw.entries
+              .where((e) => e.value is num || e.value is String)
+              .map((e) => MapEntry(e.key.toString(), _safeD(e.value))))
           : <String, double>{};
       densityResult = DensityAnalysisResult(
         densityClass: densityClass,
         densityLabel: densityLabel,
         densityIndex: densityIndex,
-        confidence: densityConf ?? 0.0,
+        confidence: densityConf,
         probabilities: densityProbs,
         gradcamImage: '',
       );

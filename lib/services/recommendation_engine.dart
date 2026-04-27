@@ -60,13 +60,30 @@ class RecommendationEngine {
     final weight      = (patient['weight'] as num?)?.toDouble() ?? 0;
     final vitaminD    = _getDouble(patient, ['vitaminDLevel']) ?? 0;
     
-    // Family history
-    final famHistory  = _getInt(patient, ['familyHistory', 'family_history']) ?? 0;
-    final famCount    = _getDouble(patient, ['familyHistoryCount', 'family_history_count']) ?? 0;
-    final famDegree   = _getDouble(patient, ['familyHistoryDegree', 'family_history_degree']) ?? 0;
+    // Family history — web portal stores as nested object {hasHistory, count, degree}
+    // Flutter app stores flat: family_history: 0|1
+    final famHistoryRaw = patient['familyHistory'];
+    final int famHistory;
+    final double famCount;
+    final double famDegree;
+    if (famHistoryRaw is Map) {
+      famHistory = _safeInt(famHistoryRaw['hasHistory']);
+      famCount   = _safeDouble(famHistoryRaw['count']);
+      famDegree  = _safeDouble(famHistoryRaw['degree']);
+    } else {
+      famHistory = _getInt(patient, ['familyHistory', 'family_history']) ?? 0;
+      famCount   = _getDouble(patient, ['familyHistoryCount', 'family_history_count']) ?? 0;
+      famDegree  = _getDouble(patient, ['familyHistoryDegree', 'family_history_degree']) ?? 0;
+    }
     
-    // Lifestyle factors
-    final exercise    = _getInt(patient, ['exerciseRegular', 'exercise_regular']) ?? 0;
+    // Lifestyle factors — web portal stores in lifestyle.exerciseRegular
+    final lifestyleRaw = patient['lifestyle'];
+    final int exercise;
+    if (lifestyleRaw is Map) {
+      exercise = _safeInt(lifestyleRaw['exerciseRegular']);
+    } else {
+      exercise = _getInt(patient, ['exerciseRegular', 'exercise_regular']) ?? 0;
+    }
     final alcoholDrinks = _getDouble(patient, ['alcoholDrinksPerWeek']) ?? 0;
     final smokingStatus = _getInt(patient, ['smokingStatus']) ?? 0; // 0=never, 1=former, 2=current
     final dietType    = patient['dietType']?.toString() ?? '';
@@ -414,7 +431,44 @@ class RecommendationEngine {
       ));
     }
 
-    // ── Density-driven recommendations (ACR 2024) ────────────────────────────
+    // ── Cross-analysis: Normal mammogram + high density ──────────────────────
+    // No cancer visible NOW, but dense tissue is both a risk factor and a
+    // limitation of mammography — the doctor must understand both dimensions.
+    if (mammogramAnalysis != null && densityAnalysis != null) {
+      final mammoNormal = mammoPrediction == 'Normal';
+      final highDensity = (densityIndex ?? -1) >= 2;
+
+      if (mammoNormal && highDensity) {
+        final densLetter = densityIndex == 3 ? 'D (Extremely Dense)' : 'C (Heterogeneously Dense)';
+        final missRate   = densityIndex == 3 ? '40–50%' : '30–40%';
+        final suppImaging = densityIndex == 3
+            ? 'contrast-enhanced MRI (preferred) or whole-breast ultrasound'
+            : 'whole-breast ultrasound or breast MRI';
+
+        recs.add(Recommendation(
+          title: 'Normal Mammogram — But Dense Tissue Requires Attention',
+          detail: 'The mammogram shows no suspicious findings. However, Density $densLetter means mammography alone may miss up to $missRate of cancers in this patient. '
+              'Dense tissue appears white on mammograms — the same colour as tumours — making early lesions difficult to detect. '
+              'This result means no cancer is currently visible, not that the breast is cancer-free. '
+              'Supplemental $suppImaging is recommended to rule out occult (hidden) lesions.',
+          priority: densityIndex == 3 ? RecPriority.high : RecPriority.medium,
+          category: RecCategory.imaging,
+          icon: '🔍',
+        ));
+
+        recs.add(Recommendation(
+          title: 'Density Is an Independent Cancer Risk Factor',
+          detail: 'Beyond limiting mammography sensitivity, Density $densLetter is itself an independent risk factor for developing breast cancer — separate from any current imaging findings. '
+              'Women with heterogeneously or extremely dense breasts have a 1.2–2× higher lifetime risk compared to average-density women. '
+              'This patient should be counselled about their density status and its implications for future screening strategy.',
+          priority: RecPriority.medium,
+          category: RecCategory.clinical,
+          icon: '📋',
+        ));
+      }
+    }
+
+
     if (densityAnalysis != null) {
       if (densityIndex == 3) {
         // Density D — extremely dense, significantly limits mammography
@@ -518,10 +572,14 @@ class RecommendationEngine {
         final nested = p[parts[0]];
         if (nested is Map) {
           final v = nested[parts[1]];
-          if (v != null) return (v as num).toDouble();
+          if (v is num) return v.toDouble();
+          if (v is String) return double.tryParse(v);
         }
-      } else if (p[k] != null) {
-        return (p[k] as num).toDouble();
+      } else {
+        final v = p[k];
+        if (v is num) return v.toDouble();
+        if (v is String) return double.tryParse(v);
+        // skip Maps/Lists — they are nested objects, not numeric values
       }
     }
     return null;
@@ -529,21 +587,47 @@ class RecommendationEngine {
 
   static int? _getInt(Map<String, dynamic> p, List<String> keys) {
     for (final k in keys) {
-      if (p[k] != null) return (p[k] as num).toInt();
+      final v = p[k];
+      if (v is num) return v.toInt();
+      if (v is bool) return v ? 1 : 0;
+      if (v is String) return int.tryParse(v);
+      // skip Maps/Lists
     }
     return null;
   }
 
   static int? _getIntNested(Map<String, dynamic> p, String parent, String key) {
     final nested = p[parent];
-    if (nested is Map && nested[key] != null) return (nested[key] as num).toInt();
+    if (nested is Map) {
+      final v = nested[key];
+      if (v is num) return v.toInt();
+      if (v is bool) return v ? 1 : 0;
+      if (v is String) return int.tryParse(v);
+    }
     return null;
   }
 
   static double? _getDoubleNested(Map<String, dynamic> p, String parent, String key) {
     final nested = p[parent];
-    if (nested is Map && nested[key] != null) return (nested[key] as num).toDouble();
+    if (nested is Map) {
+      final v = nested[key];
+      if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v);
+    }
     return null;
+  }
+
+  static int _safeInt(dynamic v, [int fallback = 0]) {
+    if (v is num) return v.toInt();
+    if (v is bool) return v ? 1 : 0;
+    if (v is String) return int.tryParse(v) ?? fallback;
+    return fallback;
+  }
+
+  static double _safeDouble(dynamic v, [double fallback = 0.0]) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v) ?? fallback;
+    return fallback;
   }
 
   static String _shapLabel(String key) {

@@ -28,13 +28,20 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   int _patientAge = 0;
   Map<String, dynamic> _patientData = {};
 
+  /// Safe numeric extractor — never throws on unexpected types.
+  static double _n(dynamic v, [double fallback = 0.0]) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v) ?? fallback;
+    return fallback;
+  }
+
   @override
   void initState() {
     super.initState();
     _pdfUrl = widget.reportData['pdfUrl']?.toString();
-    final storedAge = (widget.reportData['patientAge'] as num?)?.toInt() ?? 0;
-    if (storedAge > 0) {
-      _patientAge = storedAge;
+    final storedAge = widget.reportData['patientAge'];
+    if (storedAge is num && storedAge > 0) {
+      _patientAge = storedAge.toInt();
     }
     _fetchPatientData();
   }
@@ -49,7 +56,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         setState(() {
           _patientData = data;
           if (_patientAge == 0) {
-            _patientAge = (data['age'] as num?)?.toInt() ?? 0;
+            final ageVal = data['age'];
+            _patientAge = ageVal is num ? ageVal.toInt() : 0;
           }
         });
       }
@@ -105,36 +113,41 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
     // ── Risk ──────────────────────────────────────────────────────────────
     final riskLabel  = d['riskLabel']?.toString() ?? '';
-    final riskPct    = (d['riskPercentage'] as num?)?.toDouble() ?? 0.0;
+    final riskPct    = _n(d['riskPercentage']);
     final isHighRisk = riskLabel == 'High Risk';
 
     // ── Ultrasound ────────────────────────────────────────────────────────
     final usPrediction = d['usPrediction']?.toString() ?? d['prediction']?.toString();
-    final usConfidence = (d['usConfidence'] as num?)?.toDouble() ??
-                         (d['confidence'] as num?)?.toDouble();
+    final usConfidence = _n(d['usConfidence'] ?? d['confidence']);
     final probRaw = d['usProbabilities'] ?? (isRadiologist ? null : d['probabilities']);
     final Map<String, double> probs = probRaw is Map
-        ? probRaw.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()))
+        ? Map.fromEntries(probRaw.entries
+            .where((e) => e.value is num || e.value is String)
+            .map((e) => MapEntry(e.key.toString(), _n(e.value))))
         : {};
 
     // ── Density ───────────────────────────────────────────────────────────
     final densityLabel = d['densityLabel']?.toString() ?? '';
     final densityClass = d['densityClass']?.toString() ?? '';
-    final densityConf  = (d['densityConfidence'] as num?)?.toDouble();
-    final densityIndex = (d['densityIndex'] as num?)?.toInt() ?? -1;
+    final densityConf  = d['densityConfidence'] != null ? _n(d['densityConfidence']) : null;
+    final densityIndex = d['densityIndex'] is num ? (d['densityIndex'] as num).toInt() : -1;
     final densProbs    = d['densityProbabilities'];
     final Map<String, double> densMap = (densProbs is Map && densityLabel.isNotEmpty)
-        ? densProbs.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()))
+        ? Map.fromEntries(densProbs.entries
+            .where((e) => e.value is num || e.value is String)
+            .map((e) => MapEntry(e.key.toString(), _n(e.value))))
         : {};
 
     // ── Mammogram Analysis ────────────────────────────────────────────────
     final mammoPrediction  = d['mammoPrediction']?.toString() ?? '';
-    final mammoPredIdx     = (d['mammoPredictionIndex'] as num?)?.toInt() ?? -1;
-    final mammoConf        = (d['mammoConfidence'] as num?)?.toDouble();
+    final mammoPredIdx     = d['mammoPredictionIndex'] is num ? (d['mammoPredictionIndex'] as num).toInt() : -1;
+    final mammoConf        = d['mammoConfidence'] != null ? _n(d['mammoConfidence']) : null;
     final mammoFinding     = d['mammoFindingCategory']?.toString() ?? '';
     final mammoProbs       = d['mammoProbabilities'];
     final Map<String, double> mammoMap = (mammoProbs is Map && mammoPrediction.isNotEmpty)
-        ? mammoProbs.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()))
+        ? Map.fromEntries(mammoProbs.entries
+            .where((e) => e.value is num || e.value is String)
+            .map((e) => MapEntry(e.key.toString(), _n(e.value))))
         : {};
 
     // ── Images ────────────────────────────────────────────────────────────
@@ -144,15 +157,17 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     final gradcamUrl    = d['gradcamUrl']?.toString();
 
     // ── Validation scores ─────────────────────────────────────────────────
-    final mammoScore = (d['gatekeeperScore'] as num?)?.toDouble();
+    final mammoScore = d['gatekeeperScore'] != null ? _n(d['gatekeeperScore']) : null;
     final isValid    = d['isValid'] as bool?;
 
     // ── SHAP ──────────────────────────────────────────────────────────────
     final shapRaw = d['shapValues'];
     final Map<String, double> shapValues = shapRaw is Map
-        ? shapRaw.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()))
+        ? Map.fromEntries(shapRaw.entries
+            .where((e) => e.value is num || e.value is String)
+            .map((e) => MapEntry(e.key.toString(), _n(e.value))))
         : {};
-    final baseValue = (d['baseValue'] as num?)?.toDouble() ?? 0.0;
+    final baseValue = d['baseValue'] != null ? _n(d['baseValue']) : 0.0;
     final sortedShap = shapValues.entries.toList()
       ..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
 
@@ -358,6 +373,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 densityIndex: densityIndex,
                 densityConf: densityConf,
                 densMap: densMap,
+                mammoPrediction: mammoPrediction,
               ),
               const SizedBox(height: 20),
             ],
@@ -820,8 +836,43 @@ class _DensityCard extends StatelessWidget {
   final int densityIndex;
   final double? densityConf;
   final Map<String, double> densMap;
+  /// Pass the mammogram prediction so we can show the cross-analysis insight.
+  final String? mammoPrediction;
   const _DensityCard({required this.isDark, required this.densityLabel, required this.densityClass,
-      required this.densityIndex, required this.densityConf, required this.densMap});
+      required this.densityIndex, required this.densityConf, required this.densMap,
+      this.mammoPrediction});
+
+  // ── What each BI-RADS density class means in plain language ──────────────
+  static const _densityExplanations = {
+    0: _DensityExplanation(
+      headline: 'Almost entirely fatty (Density A)',
+      what: 'The breast is composed almost entirely of fat. Dense tissue is minimal.',
+      mammographySensitivity: 'Excellent — fatty tissue appears dark on mammograms, making any mass easy to spot.',
+      cancerRisk: 'No additional density-related risk. Standard screening intervals apply.',
+      color: Color(0xFF10B981),
+    ),
+    1: _DensityExplanation(
+      headline: 'Scattered fibroglandular tissue (Density B)',
+      what: 'There are scattered areas of fibroglandular tissue mixed with fat.',
+      mammographySensitivity: 'Good — most masses are still visible, though a small number may be obscured.',
+      cancerRisk: 'Slightly elevated compared to Density A, but still within the average-risk range.',
+      color: Color(0xFF3B82F6),
+    ),
+    2: _DensityExplanation(
+      headline: 'Heterogeneously dense tissue (Density C)',
+      what: 'The breast has more dense tissue than fat. Dense tissue appears white on mammograms — the same colour as many tumours.',
+      mammographySensitivity: 'Reduced — dense tissue can mask small masses, lowering mammography sensitivity by up to 30–40%.',
+      cancerRisk: 'Moderately elevated. Dense tissue itself is an independent risk factor for breast cancer, separate from any current findings.',
+      color: Color(0xFFF59E0B),
+    ),
+    3: _DensityExplanation(
+      headline: 'Extremely dense tissue (Density D)',
+      what: 'The breast is almost entirely composed of dense fibroglandular tissue. This is the highest density category.',
+      mammographySensitivity: 'Significantly reduced — mammography alone may miss up to 40–50% of cancers in extremely dense breasts.',
+      cancerRisk: 'Substantially elevated. Extremely dense tissue is one of the strongest independent risk factors for breast cancer. Supplemental imaging is strongly recommended.',
+      color: Color(0xFFEF4444),
+    ),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -834,6 +885,12 @@ class _DensityCard extends StatelessWidget {
     final idx = densityIndex.clamp(0, 3);
     final color = colors[idx];
     final densLetter = ['A', 'B', 'C', 'D'][idx];
+    final explanation = _densityExplanations[idx]!;
+
+    // Cross-analysis: Normal mammogram but high density (C or D)
+    final isHighDensity = idx >= 2;
+    final mammoIsNormal = mammoPrediction == 'Normal';
+    final showCrossInsight = isHighDensity && mammoIsNormal;
 
     return Container(
       width: double.infinity, padding: const EdgeInsets.all(18),
@@ -843,6 +900,8 @@ class _DensityCard extends StatelessWidget {
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(isDark ? 0.25 : 0.06), blurRadius: 14, offset: const Offset(0, 4))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+        // ── Header ──────────────────────────────────────────────────────────
         Row(children: [
           Container(padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
@@ -867,8 +926,100 @@ class _DensityCard extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 16),
+
+        // ── Density label ────────────────────────────────────────────────────
         Text(densityLabel.isNotEmpty ? densityLabel : densityClass,
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: color)),
+        const SizedBox(height: 14),
+
+        // ── Plain-language explanation ───────────────────────────────────────
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: color.withOpacity(isDark ? 0.08 : 0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withOpacity(0.25)),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(explanation.headline,
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: color)),
+            const SizedBox(height: 10),
+            _explanationRow(context, '🔬', 'What this means', explanation.what),
+            const SizedBox(height: 8),
+            _explanationRow(context, '📷', 'Mammography sensitivity', explanation.mammographySensitivity),
+            const SizedBox(height: 8),
+            _explanationRow(context, '⚠️', 'Cancer risk implication', explanation.cancerRisk),
+          ]),
+        ),
+
+        // ── Cross-analysis insight (Normal mammogram + high density) ─────────
+        if (showCrossInsight) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF3D2F1F) : const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF97316).withOpacity(0.5), width: 1.5),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF97316).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.compare_arrows_rounded, color: Color(0xFFF97316), size: 16),
+                ),
+                const SizedBox(width: 8),
+                const Text('Cross-Analysis Insight',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFF97316))),
+              ]),
+              const SizedBox(height: 10),
+              Text(
+                'Mammogram result: Normal  ·  Density: ${densLetter == 'C' ? 'Heterogeneously Dense (C)' : 'Extremely Dense (D)'}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? const Color(0xFFFFD580) : const Color(0xFF92400E),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'No cancer is currently visible on this mammogram. However, this does NOT mean the breast is cancer-free — it means no cancer was detected with the available imaging.',
+                style: TextStyle(fontSize: 12.5, height: 1.6,
+                    color: isDark ? const Color(0xFFE5C97E) : const Color(0xFF78350F)),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                idx == 3
+                    ? 'Extremely dense tissue (Density D) can hide up to 40–50% of cancers on mammography alone. A normal mammogram result in the presence of Density D should be interpreted with caution. Supplemental MRI or whole-breast ultrasound is strongly recommended to rule out occult (hidden) lesions.'
+                    : 'Heterogeneously dense tissue (Density C) can obscure small masses on mammography. A normal mammogram result in the presence of Density C may still miss early-stage lesions. Supplemental whole-breast ultrasound or MRI is recommended, especially if other risk factors are present.',
+                style: TextStyle(fontSize: 12.5, height: 1.6,
+                    color: isDark ? const Color(0xFFE5C97E) : const Color(0xFF78350F)),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF97316).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.lightbulb_outline_rounded, size: 13, color: Color(0xFFF97316)),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(
+                    'Density is a risk factor for future cancer AND a limitation of mammography — both are clinically important.',
+                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFFF97316)),
+                  )),
+                ]),
+              ),
+            ]),
+          ),
+        ],
+
+        // ── Class probabilities ──────────────────────────────────────────────
         if (densMap.isNotEmpty) ...[
           const SizedBox(height: 16),
           Text('Class Probabilities', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.getTextPrimary(context))),
@@ -899,6 +1050,41 @@ class _DensityCard extends StatelessWidget {
       ]),
     );
   }
+
+  Widget _explanationRow(BuildContext context, String emoji, String label, String text) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(emoji, style: const TextStyle(fontSize: 14)),
+      const SizedBox(width: 8),
+      Expanded(child: RichText(text: TextSpan(
+        children: [
+          TextSpan(text: '$label: ', style: TextStyle(
+            fontSize: 12.5, fontWeight: FontWeight.w700,
+            color: AppColors.getTextPrimary(context),
+          )),
+          TextSpan(text: text, style: TextStyle(
+            fontSize: 12.5, height: 1.5,
+            color: AppColors.getTextSecondary(context),
+          )),
+        ],
+      ))),
+    ]);
+  }
+}
+
+/// Simple data class for density explanations.
+class _DensityExplanation {
+  final String headline;
+  final String what;
+  final String mammographySensitivity;
+  final String cancerRisk;
+  final Color color;
+  const _DensityExplanation({
+    required this.headline,
+    required this.what,
+    required this.mammographySensitivity,
+    required this.cancerRisk,
+    required this.color,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
