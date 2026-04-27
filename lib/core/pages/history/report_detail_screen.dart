@@ -127,6 +127,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         ? densProbs.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()))
         : {};
 
+    // ── Mammogram Analysis ────────────────────────────────────────────────
+    final mammoPrediction  = d['mammoPrediction']?.toString() ?? '';
+    final mammoPredIdx     = (d['mammoPredictionIndex'] as num?)?.toInt() ?? -1;
+    final mammoConf        = (d['mammoConfidence'] as num?)?.toDouble();
+    final mammoFinding     = d['mammoFindingCategory']?.toString() ?? '';
+    final mammoProbs       = d['mammoProbabilities'];
+    final Map<String, double> mammoMap = (mammoProbs is Map && mammoPrediction.isNotEmpty)
+        ? mammoProbs.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()))
+        : {};
+
     // ── Images ────────────────────────────────────────────────────────────
     final mammogramUrl  = d['mammogramUrl']?.toString() ?? d['ccImageUrl']?.toString();
     final mloUrl        = d['mloImageUrl']?.toString();
@@ -182,6 +192,18 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         confidence: densityConf ?? 0.0,
         probabilities: densMap,
         gradcamImage: '',
+      );
+    }
+
+    MammogramAnalysisResult? mammoResult;
+    if (mammoPrediction.isNotEmpty && mammoPredIdx >= 0) {
+      mammoResult = MammogramAnalysisResult(
+        prediction:      mammoPrediction,
+        predictionIndex: mammoPredIdx,
+        confidence:      mammoConf ?? 0.0,
+        probabilities:   mammoMap,
+        gradcamImage:    '',
+        findingCategory: mammoFinding,
       );
     }
 
@@ -321,7 +343,13 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               const SizedBox(height: 20),
             ],
 
-            // ── 3b. Density analysis ──────────────────────────────────────
+            // ── 3b. Mammogram finding (BI-RADS classification) ────────────
+            if (mammoResult != null) ...[
+              _MammogramFindingCard(isDark: isDark, result: mammoResult),
+              const SizedBox(height: 20),
+            ],
+
+            // ── 3c. Density analysis ──────────────────────────────────────
             if (densityLabel.isNotEmpty || densityClass.isNotEmpty) ...[
               _DensityCard(
                 isDark: isDark,
@@ -408,6 +436,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 tabularResult: tabularResult,
                 usResult: usResult,
                 densityResult: densityResult,
+                mammoResult: mammoResult,
               ),
               const SizedBox(height: 20),
             ],
@@ -656,6 +685,119 @@ class _UltrasoundCard extends StatelessWidget {
                   Container(height: 7, width: con.maxWidth,
                       decoration: BoxDecoration(color: isDark ? const Color(0xFF2A2D47) : Colors.grey[200], borderRadius: BorderRadius.circular(4))),
                   Container(height: 7, width: con.maxWidth * (e.value / 100),
+                      decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(4),
+                          boxShadow: [BoxShadow(color: c.withOpacity(0.4), blurRadius: 4)])),
+                ])),
+              ]),
+            );
+          }),
+        ],
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mammogram Finding Card
+// ─────────────────────────────────────────────────────────────────────────────
+class _MammogramFindingCard extends StatelessWidget {
+  final bool isDark;
+  final MammogramAnalysisResult result;
+  const _MammogramFindingCard({required this.isDark, required this.result});
+
+  @override
+  Widget build(BuildContext context) {
+    Color predColor;
+    IconData predIcon;
+    switch (result.predictionIndex) {
+      case 2:
+        predColor = const Color(0xFFEF4444);
+        predIcon  = Icons.warning_rounded;
+        break;
+      case 1:
+        predColor = const Color(0xFFF59E0B);
+        predIcon  = Icons.info_rounded;
+        break;
+      default:
+        predColor = const Color(0xFF10B981);
+        predIcon  = Icons.check_circle_rounded;
+    }
+
+    return Container(
+      width: double.infinity, padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(isDark ? 0.25 : 0.06), blurRadius: 14, offset: const Offset(0, 4))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: predColor.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+              child: Icon(Icons.monitor_heart_rounded, color: predColor, size: 18)),
+          const SizedBox(width: 10),
+          Text('Mammogram Finding', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : const Color(0xFF1F2937))),
+        ]),
+        const SizedBox(height: 16),
+        Row(children: [
+          Container(
+            width: 64, height: 64,
+            decoration: BoxDecoration(
+              color: predColor.withOpacity(isDark ? 0.2 : 0.1),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: predColor.withOpacity(0.4), width: 2),
+            ),
+            child: Icon(predIcon, color: predColor, size: 32),
+          ),
+          const SizedBox(width: 16),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(result.prediction, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: predColor, letterSpacing: -0.5)),
+            Text('${result.confidence.toStringAsFixed(1)}% confidence',
+                style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(context), fontWeight: FontWeight.w500)),
+            if (result.findingCategory.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(color: predColor.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+                child: Text(result.findingCategory,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: predColor)),
+              ),
+            ],
+          ])),
+        ]),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: predColor.withOpacity(isDark ? 0.1 : 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: predColor.withOpacity(0.2)),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.info_outline_rounded, size: 16, color: predColor),
+            const SizedBox(width: 8),
+            Expanded(child: Text(result.clinicalNote,
+                style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.getTextSecondary(context)))),
+          ]),
+        ),
+        if (result.probabilities.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          ...result.probabilities.entries.map((e) {
+            final c = e.key == 'Suspicious' ? const Color(0xFFEF4444)
+                : e.key == 'Benign' ? const Color(0xFFF59E0B) : const Color(0xFF10B981);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Text(e.key, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(context))),
+                  Text('${e.value.toStringAsFixed(1)}%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: c)),
+                ]),
+                const SizedBox(height: 5),
+                LayoutBuilder(builder: (ctx, con) => Stack(children: [
+                  Container(height: 7, width: con.maxWidth,
+                      decoration: BoxDecoration(color: isDark ? const Color(0xFF2A2D47) : Colors.grey[200], borderRadius: BorderRadius.circular(4))),
+                  Container(height: 7, width: con.maxWidth * (e.value / 100).clamp(0.0, 1.0),
                       decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(4),
                           boxShadow: [BoxShadow(color: c.withOpacity(0.4), blurRadius: 4)])),
                 ])),
@@ -956,8 +1098,9 @@ class _RecommendationsCard extends StatelessWidget {
   final TabularPredictionResult? tabularResult;
   final UltrasoundAnalysisResult? usResult;
   final DensityAnalysisResult? densityResult;
+  final MammogramAnalysisResult? mammoResult;
   const _RecommendationsCard({required this.patient, required this.tabularResult,
-      required this.usResult, required this.densityResult});
+      required this.usResult, required this.densityResult, this.mammoResult});
 
   @override
   Widget build(BuildContext context) {
@@ -967,6 +1110,7 @@ class _RecommendationsCard extends StatelessWidget {
       tabularResult: tabularResult,
       ultrasoundAnalysis: usResult,
       densityAnalysis: densityResult,
+      mammogramAnalysis: mammoResult,
     );
     if (recs.isEmpty) return const SizedBox.shrink();
 

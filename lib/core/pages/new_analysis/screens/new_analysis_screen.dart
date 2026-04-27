@@ -276,25 +276,48 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen>
   }
 
   Widget _buildImagingInfoRow(BuildContext context) {
-    return Row(
-      children: [
-        Icon(
-          Icons.info_outline_rounded,
-          size: 16,
-          color: AppColors.getTextSecondary(context),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            "Select at least one • You can select both for better analysis",
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.getTextSecondary(context),
-              fontWeight: FontWeight.w500,
+    final hasMammo = selectedImaging.contains(ImagingType.mammogram) ||
+        selectedImaging.contains(ImagingType.mammogramMlo);
+    final hasUs = selectedImaging.contains(ImagingType.ultrasound);
+    final isMultiModal = hasMammo && hasUs;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isMultiModal
+            ? const Color(0xFF6366F1).withOpacity(0.08)
+            : AppColors.getTextSecondary(context).withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: isMultiModal
+            ? Border.all(color: const Color(0xFF6366F1).withOpacity(0.25))
+            : null,
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isMultiModal ? Icons.auto_awesome_rounded : Icons.info_outline_rounded,
+            size: 16,
+            color: isMultiModal
+                ? const Color(0xFF6366F1)
+                : AppColors.getTextSecondary(context),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              isMultiModal
+                  ? 'Multi-modal selected — mammogram + ultrasound will both be analysed'
+                  : 'Mammogram requires both CC + MLO views • Ultrasound can be added independently',
+              style: TextStyle(
+                fontSize: 12,
+                color: isMultiModal
+                    ? const Color(0xFF6366F1)
+                    : AppColors.getTextSecondary(context),
+                fontWeight: isMultiModal ? FontWeight.w600 : FontWeight.w500,
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

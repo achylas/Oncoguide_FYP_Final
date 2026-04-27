@@ -1563,6 +1563,63 @@ class _GenerateReportScreenState extends State<_GenerateReportScreen> {
   Map<String, dynamic>? _selectedUs;
   bool _isLoading = false;
 
+  // ── Cached data — fetched once in initState, never re-fetched on setState ──
+  Map<String, dynamic> _patient = {};
+  List<Map<String, dynamic>> _mammograms = [];
+  List<Map<String, dynamic>> _ultrasounds = [];
+  bool _dataLoading = true;
+  String _dataError = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      // Fetch patient + images in parallel — only once
+      final results = await Future.wait([
+        FirebaseFirestore.instance
+            .collection('patients')
+            .doc(widget.patientId)
+            .get(),
+        FirebaseFirestore.instance
+            .collection('patient_images')
+            .where('patientId', isEqualTo: widget.patientId)
+            .orderBy('uploadedAt', descending: true)
+            .get(),
+      ]);
+
+      final patientSnap = results[0] as DocumentSnapshot<Map<String, dynamic>>;
+      final imagesSnap  = results[1] as QuerySnapshot<Map<String, dynamic>>;
+
+      final patient = patientSnap.exists
+          ? {'id': patientSnap.id, ...patientSnap.data()!}
+          : <String, dynamic>{};
+
+      final docs = imagesSnap.docs
+          .map((d) => {'id': d.id, ...d.data()})
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _patient    = patient;
+          _mammograms = docs.where((d) => d['imageType'] == 'mammogram').toList();
+          _ultrasounds= docs.where((d) => d['imageType'] == 'ultrasound').toList();
+          _dataLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _dataError   = e.toString();
+          _dataLoading = false;
+        });
+      }
+    }
+  }
+
   Future<File?> _downloadToFile(Map<String, dynamic> doc) async {
     final url = doc['imageUrl']?.toString() ?? '';
     if (url.isEmpty) return null;
@@ -1580,10 +1637,35 @@ class _GenerateReportScreenState extends State<_GenerateReportScreen> {
   }
 
   Future<void> _startAnalysis(Map<String, dynamic> patient) async {
-    if (_selectedCc == null && _selectedUs == null) {
+    // Mammogram requires both CC and MLO — enforce the pair
+    final bool hasCc  = _selectedCc != null;
+    final bool hasMlo = _selectedMlo != null;
+    final bool hasUs  = _selectedUs != null;
+
+    if (!hasCc && !hasUs) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Select at least one image to generate a report.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (hasCc && !hasMlo) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mammogram requires both CC and MLO views — please select the MLO image.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (hasMlo && !hasCc) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mammogram requires both CC and MLO views — please select the CC image.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -1646,6 +1728,21 @@ class _GenerateReportScreenState extends State<_GenerateReportScreen> {
     return '';
   }
 
+  /// True when the selection is valid to proceed:
+  /// - Ultrasound alone: OK
+  /// - Mammogram: CC + MLO both required
+  /// - Both: CC + MLO + Ultrasound all present
+  bool get _canStart {
+    final hasCc  = _selectedCc != null;
+    final hasMlo = _selectedMlo != null;
+    final hasUs  = _selectedUs != null;
+    // Must have at least something selected
+    if (!hasCc && !hasMlo && !hasUs) return false;
+    // If any mammogram view is selected, both must be present
+    if ((hasCc || hasMlo) && !(hasCc && hasMlo)) return false;
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -1658,335 +1755,279 @@ class _GenerateReportScreenState extends State<_GenerateReportScreen> {
         showBackButton: true,
         showSettingsButton: false,
       ),
-      body: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        future: FirebaseFirestore.instance
-            .collection('patients')
-            .doc(widget.patientId)
-            .get(),
-        builder: (context, patientSnap) {
-          final patient = patientSnap.data?.exists == true
-              ? {'id': patientSnap.data!.id, ...patientSnap.data!.data()!}
-              : <String, dynamic>{};
+      body: _dataLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _dataError.isNotEmpty
+              ? Center(child: Text('Error loading data: $_dataError'))
+              : _buildContent(isDark),
+    );
+  }
 
-          return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('patient_images')
-                .where('patientId', isEqualTo: widget.patientId)
-                .orderBy('uploadedAt', descending: true)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
+  Widget _buildContent(bool isDark) {
+    final mammograms  = _mammograms;
+    final ultrasounds = _ultrasounds;
+    final patient     = _patient;
+    final docs        = [...mammograms, ...ultrasounds];
 
-              final docs = snapshot.data?.docs
-                      .map((d) => {'id': d.id, ...d.data()})
-                      .toList() ??
-                  [];
+    if (docs.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.image_search_rounded,
+                    size: 56, color: AppColors.primary.withOpacity(0.5)),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'No images available',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.getTextPrimary(context),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Images are uploaded by the radiologist\nfrom the web portal. Once uploaded,\nyou can select them here to generate a report.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.6,
+                  color: AppColors.getTextSecondary(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-              final mammograms = docs
-                  .where((d) => d['imageType'] == 'mammogram')
-                  .toList();
-              final ultrasounds = docs
-                  .where((d) => d['imageType'] == 'ultrasound')
-                  .toList();
-
-              if (docs.isEmpty) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.08),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.image_search_rounded,
-                              size: 56,
-                              color: AppColors.primary.withOpacity(0.5)),
+    return Column(
+      children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            children: [
+              // Info banner
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withOpacity(isDark ? 0.15 : 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.verified_rounded, color: Color(0xFF6366F1), size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Images below are pre-validated by the radiologist. Select the scans you want to analyse.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.5,
+                          color: AppColors.getTextSecondary(context),
                         ),
-                        const SizedBox(height: 20),
-                        Text(
-                          'No images available',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.getTextPrimary(context),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Images are uploaded by the radiologist\nfrom the web portal. Once uploaded,\nyou can select them here to generate a report.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            height: 1.6,
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                );
-              }
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
 
-              return Column(
-                children: [
-                  Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                      children: [
-                        // Info banner
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6366F1).withOpacity(
-                                isDark ? 0.15 : 0.08),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: const Color(0xFF6366F1).withOpacity(0.3),
+              // Mammogram CC
+              if (mammograms.isNotEmpty) ...[
+                _SelectionSectionHeader(
+                  label: 'Mammogram (CC)',
+                  icon: Icons.monitor_heart_outlined,
+                  color: const Color(0xFFFF6F91),
+                  selected: _selectedCc != null,
+                  onClear: () => setState(() => _selectedCc = null),
+                ),
+                const SizedBox(height: 10),
+                _SelectionImageList(
+                  docs: mammograms,
+                  selected: _selectedCc,
+                  accentColor: const Color(0xFFFF6F91),
+                  onSelect: (doc) => setState(() => _selectedCc = doc),
+                ),
+                const SizedBox(height: 20),
+
+                // Mammogram MLO
+                _SelectionSectionHeader(
+                  label: 'Mammogram (MLO)',
+                  icon: Icons.flip_rounded,
+                  color: const Color(0xFFFF9A3C),
+                  selected: _selectedMlo != null,
+                  onClear: () => setState(() => _selectedMlo = null),
+                ),
+                const SizedBox(height: 10),
+                _SelectionImageList(
+                  docs: mammograms,
+                  selected: _selectedMlo,
+                  accentColor: const Color(0xFFFF9A3C),
+                  onSelect: (doc) => setState(() => _selectedMlo = doc),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              // Ultrasound
+              if (ultrasounds.isNotEmpty) ...[
+                _SelectionSectionHeader(
+                  label: 'Ultrasound',
+                  icon: Icons.waves_rounded,
+                  color: const Color(0xFF6C63FF),
+                  selected: _selectedUs != null,
+                  onClear: () => setState(() => _selectedUs = null),
+                ),
+                const SizedBox(height: 10),
+                _SelectionImageList(
+                  docs: ultrasounds,
+                  selected: _selectedUs,
+                  accentColor: const Color(0xFF6C63FF),
+                  onSelect: (doc) => setState(() => _selectedUs = doc),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              // Selection summary
+              if (_selectedCc != null || _selectedMlo != null || _selectedUs != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Selected for Analysis',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.getTextPrimary(context),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      if (_selectedCc != null)
+                        _SelectedRow(
+                          label: 'Mammogram CC',
+                          color: const Color(0xFFFF6F91),
+                          date: _formatDate(_selectedCc!['uploadedAt']),
+                        ),
+                      if (_selectedMlo != null)
+                        _SelectedRow(
+                          label: 'Mammogram MLO',
+                          color: const Color(0xFFFF9A3C),
+                          date: _formatDate(_selectedMlo!['uploadedAt']),
+                        ),
+                      if (_selectedUs != null)
+                        _SelectedRow(
+                          label: 'Ultrasound',
+                          color: const Color(0xFF6C63FF),
+                          date: _formatDate(_selectedUs!['uploadedAt']),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ],
+          ),
+        ),
+
+        // Generate button
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isDark ? 0.3 : 0.08),
+                blurRadius: 16,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: _canStart
+                    ? const LinearGradient(
+                        colors: [Color(0xFFFF6F91), Color(0xFF6C63FF)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
+                color: _canStart ? null : AppColors.getBorder(context),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: _canStart
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFFFF6F91).withOpacity(0.4),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: (_isLoading || !_canStart)
+                      ? null
+                      : () => _startAnalysis(patient),
+                  child: Center(
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.5,
                             ),
-                          ),
-                          child: Row(
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.verified_rounded,
-                                  color: Color(0xFF6366F1), size: 18),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'Images below are pre-validated by the radiologist. Select the scans you want to analyse.',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    height: 1.5,
-                                    color: AppColors.getTextSecondary(context),
-                                  ),
+                              Icon(Icons.psychology_rounded, color: Colors.white, size: 22),
+                              SizedBox(width: 10),
+                              Text(
+                                'Generate AI Report',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Mammogram CC
-                        if (mammograms.isNotEmpty) ...[
-                          _SelectionSectionHeader(
-                            label: 'Mammogram (CC)',
-                            icon: Icons.monitor_heart_outlined,
-                            color: const Color(0xFFFF6F91),
-                            selected: _selectedCc != null,
-                            onClear: () => setState(() => _selectedCc = null),
-                          ),
-                          const SizedBox(height: 10),
-                          _SelectionImageList(
-                            docs: mammograms,
-                            selected: _selectedCc,
-                            accentColor: const Color(0xFFFF6F91),
-                            onSelect: (doc) =>
-                                setState(() => _selectedCc = doc),
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Mammogram MLO
-                          _SelectionSectionHeader(
-                            label: 'Mammogram (MLO)',
-                            icon: Icons.flip_rounded,
-                            color: const Color(0xFFFF9A3C),
-                            selected: _selectedMlo != null,
-                            onClear: () => setState(() => _selectedMlo = null),
-                          ),
-                          const SizedBox(height: 10),
-                          _SelectionImageList(
-                            docs: mammograms,
-                            selected: _selectedMlo,
-                            accentColor: const Color(0xFFFF9A3C),
-                            onSelect: (doc) =>
-                                setState(() => _selectedMlo = doc),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-
-                        // Ultrasound
-                        if (ultrasounds.isNotEmpty) ...[
-                          _SelectionSectionHeader(
-                            label: 'Ultrasound',
-                            icon: Icons.waves_rounded,
-                            color: const Color(0xFF6C63FF),
-                            selected: _selectedUs != null,
-                            onClear: () => setState(() => _selectedUs = null),
-                          ),
-                          const SizedBox(height: 10),
-                          _SelectionImageList(
-                            docs: ultrasounds,
-                            selected: _selectedUs,
-                            accentColor: const Color(0xFF6C63FF),
-                            onSelect: (doc) =>
-                                setState(() => _selectedUs = doc),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-
-                        // Selection summary
-                        if (_selectedCc != null ||
-                            _selectedMlo != null ||
-                            _selectedUs != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF1A1D2E)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black
-                                      .withOpacity(isDark ? 0.2 : 0.05),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Selected for Analysis',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.getTextPrimary(context),
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                if (_selectedCc != null)
-                                  _SelectedRow(
-                                    label: 'Mammogram CC',
-                                    color: const Color(0xFFFF6F91),
-                                    date: _formatDate(
-                                        _selectedCc!['uploadedAt']),
-                                  ),
-                                if (_selectedMlo != null)
-                                  _SelectedRow(
-                                    label: 'Mammogram MLO',
-                                    color: const Color(0xFFFF9A3C),
-                                    date: _formatDate(
-                                        _selectedMlo!['uploadedAt']),
-                                  ),
-                                if (_selectedUs != null)
-                                  _SelectedRow(
-                                    label: 'Ultrasound',
-                                    color: const Color(0xFF6C63FF),
-                                    date: _formatDate(
-                                        _selectedUs!['uploadedAt']),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                      ],
-                    ),
                   ),
-
-                  // Generate button
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF1A1D2E)
-                          : Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black
-                              .withOpacity(isDark ? 0.3 : 0.08),
-                          blurRadius: 16,
-                          offset: const Offset(0, -4),
-                        ),
-                      ],
-                    ),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: (_selectedCc != null || _selectedUs != null)
-                              ? const LinearGradient(
-                                  colors: [
-                                    Color(0xFFFF6F91),
-                                    Color(0xFF6C63FF)
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                )
-                              : null,
-                          color: (_selectedCc == null && _selectedUs == null)
-                              ? AppColors.getBorder(context)
-                              : null,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: (_selectedCc != null || _selectedUs != null)
-                              ? [
-                                  BoxShadow(
-                                    color: const Color(0xFFFF6F91)
-                                        .withOpacity(0.4),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: (_isLoading ||
-                                    (_selectedCc == null &&
-                                        _selectedUs == null))
-                                ? null
-                                : () => _startAnalysis(patient),
-                            child: Center(
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2.5,
-                                      ),
-                                    )
-                                  : Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        const Icon(
-                                          Icons.psychology_rounded,
-                                          color: Colors.white,
-                                          size: 22,
-                                        ),
-                                        const SizedBox(width: 10),
-                                        const Text(
-                                          'Generate AI Report',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -23,11 +23,13 @@ class BottomCTA extends StatelessWidget {
     // Check if CC is selected but MLO is missing (density requires both)
     final bool ccSelected  = selectedImaging.contains(ImagingType.mammogram);
     final bool mloSelected = selectedImaging.contains(ImagingType.mammogramMlo);
-    final bool needsMlo    = ccSelected && !mloSelected;
-    final bool needsCc     = mloSelected && !ccSelected;
+
+    // Mammogram CC and MLO are always required together — no exceptions
+    final bool needsMlo = ccSelected && !mloSelected;
+    final bool needsCc  = mloSelected && !ccSelected;
     final bool mammogramIncomplete = needsMlo || needsCc;
 
-    // Can only start if tabular added, at least one imaging, and mammogram pair is complete
+    // Ready only when tabular added, at least one imaging, and mammogram pair is complete
     final bool readyToStart = canProceed && !mammogramIncomplete;
 
     String hintMessage = '';
@@ -36,9 +38,9 @@ class BottomCTA extends StatelessWidget {
     } else if (selectedImaging.isEmpty) {
       hintMessage = 'Select at least one imaging type';
     } else if (needsMlo) {
-      hintMessage = 'Upload MLO view — both CC and MLO are required for mammogram analysis';
+      hintMessage = 'Mammogram requires both CC and MLO views — please upload the MLO view';
     } else if (needsCc) {
-      hintMessage = 'Upload CC view — both CC and MLO are required for mammogram analysis';
+      hintMessage = 'Mammogram requires both CC and MLO views — please upload the CC view';
     }
 
     return Padding(
@@ -130,7 +132,7 @@ class BottomCTA extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        'Start AI Analysis',
+                        _buttonLabel(selectedImaging),
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
@@ -150,4 +152,15 @@ class BottomCTA extends StatelessWidget {
       ),
     );
   }
+}
+
+// Returns a context-aware button label based on what's selected
+String _buttonLabel(Set<ImagingType> selected) {
+  final hasMammo = selected.contains(ImagingType.mammogram) ||
+      selected.contains(ImagingType.mammogramMlo);
+  final hasUs = selected.contains(ImagingType.ultrasound);
+  if (hasMammo && hasUs) return 'Start Multi-Modal Analysis';
+  if (hasMammo) return 'Start Mammogram Analysis';
+  if (hasUs)    return 'Start Ultrasound Analysis';
+  return 'Start AI Analysis';
 }

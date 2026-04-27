@@ -182,6 +182,42 @@ class ApiService {
   }
 
   // ─────────────────────────────────────────────
+  // Mammogram analysis (BI-RADS classification)
+  // ─────────────────────────────────────────────
+
+  /// Sends a single CC mammogram to the EfficientNet-B0 model.
+  /// Returns [MammogramAnalysisResult] with Normal/Benign/Suspicious classification.
+  static Future<MammogramAnalysisResult> analyzeMammogram(File imageFile) async {
+    final uri     = Uri.parse('$_baseUrl/analyze/mammogram');
+    final request = http.MultipartRequest('POST', uri);
+
+    final ext         = imageFile.path.split('.').last.toLowerCase();
+    final contentType = MediaType('image', ext == 'png' ? 'png' : 'jpeg');
+
+    request.files.add(
+      await http.MultipartFile.fromPath(
+        'file',
+        imageFile.path,
+        contentType: contentType,
+      ),
+    );
+
+    final streamedResponse =
+        await request.send().timeout(const Duration(seconds: 60));
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return MammogramAnalysisResult.fromJson(json);
+    } else {
+      throw ApiException(
+        statusCode: response.statusCode,
+        message: _extractDetail(response.body),
+      );
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // Density analysis (Siamese CC + MLO)
   // ─────────────────────────────────────────────
 
@@ -385,6 +421,57 @@ class DensityAnalysisResult {
       case 1: return 'Scattered fibroglandular — generally good sensitivity.';
       case 2: return 'Heterogeneous dense — may obscure small masses.';
       case 3: return 'Extremely dense — significantly reduces mammography sensitivity.';
+      default: return '';
+    }
+  }
+}
+
+/// Result from the mammogram analysis model (EfficientNet-B0, VinDr-Mammo).
+class MammogramAnalysisResult {
+  /// "Normal" | "Benign" | "Suspicious"
+  final String prediction;
+  /// 0=Normal, 1=Benign, 2=Suspicious
+  final int predictionIndex;
+  /// Confidence 0–100
+  final double confidence;
+  /// Per-class probabilities
+  final Map<String, double> probabilities;
+  /// Base64-encoded PNG GradCAM overlay
+  final String gradcamImage;
+  /// Estimated finding category (e.g. "Mass", "No Finding", "Suspicious Calcification")
+  final String findingCategory;
+
+  const MammogramAnalysisResult({
+    required this.prediction,
+    required this.predictionIndex,
+    required this.confidence,
+    required this.probabilities,
+    required this.gradcamImage,
+    required this.findingCategory,
+  });
+
+  factory MammogramAnalysisResult.fromJson(Map<String, dynamic> json) {
+    final rawProbs = json['probabilities'] as Map<String, dynamic>? ?? {};
+    return MammogramAnalysisResult(
+      prediction:      json['prediction']       as String,
+      predictionIndex: json['prediction_index'] as int,
+      confidence:      (json['confidence']      as num).toDouble(),
+      probabilities:   rawProbs.map((k, v) => MapEntry(k, (v as num).toDouble())),
+      gradcamImage:    json['gradcam_image']    as String? ?? '',
+      findingCategory: json['finding_category'] as String? ?? '',
+    );
+  }
+
+  bool get isSuspicious => predictionIndex == 2;
+  bool get isNormal     => predictionIndex == 0;
+  bool get hasGradcam   => gradcamImage.isNotEmpty;
+
+  /// Clinical description for the prediction.
+  String get clinicalNote {
+    switch (predictionIndex) {
+      case 0: return 'No suspicious findings detected. Routine screening recommended.';
+      case 1: return 'Benign finding detected. Follow-up as per physician recommendation.';
+      case 2: return 'Suspicious finding detected. Immediate clinical evaluation required.';
       default: return '';
     }
   }

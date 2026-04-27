@@ -236,6 +236,22 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
       }
     }
 
+    // ── Step 2d: Mammogram analysis (BI-RADS classification) ─────────────────
+    MammogramAnalysisResult? mammogramAnalysisResult;
+    if (widget.selectedImagingTypes.contains(ImagingType.mammogram) &&
+        mammogramFile != null &&
+        (validationResult == null || validationResult.isValid)) {
+      _setStep(_Step.predicting, 'Analysing mammogram findings…');
+      try {
+        mammogramAnalysisResult = await ApiService.analyzeMammogram(mammogramFile);
+      } on ApiException catch (e) {
+        // Non-fatal — log and continue without mammogram analysis result
+        print('[!] Mammogram analysis failed (${e.statusCode}): ${e.message}');
+      } catch (e) {
+        print('[!] Mammogram analysis error: $e');
+      }
+    }
+
     // ── Step 3: Save report ───────────────────────────────────────────────────
     _setStep(_Step.done, 'Saving report…');
     ReportService.saveReport(
@@ -247,6 +263,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
       ultrasoundValidation: usValidationResult,
       ultrasoundAnalysis: usAnalysisResult,
       densityAnalysis: densityResult,
+      mammogramAnalysis: mammogramAnalysisResult,
     ); // fire-and-forget — don't block navigation
 
     // ── Step 4: Navigate to results ───────────────────────────────────────────
@@ -266,6 +283,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
           ultrasoundValidation: usValidationResult,
           ultrasoundAnalysis: usAnalysisResult,
           densityAnalysis: densityResult,
+          mammogramAnalysis: mammogramAnalysisResult,
         ),
       ),
     );

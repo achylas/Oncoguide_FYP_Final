@@ -27,6 +27,7 @@ class Recommendation {
 ///   - RF model output (risk %, SHAP values)
 ///   - Ultrasound model output (Benign/Normal/Malignant)
 ///   - Density model output (BI-RADS A–D)
+///   - Mammogram analysis model output (Normal/Benign/Suspicious)
 ///   - Patient demographics and clinical data
 class RecommendationEngine {
 
@@ -35,6 +36,7 @@ class RecommendationEngine {
     required TabularPredictionResult? tabularResult,
     required UltrasoundAnalysisResult? ultrasoundAnalysis,
     DensityAnalysisResult? densityAnalysis,
+    MammogramAnalysisResult? mammogramAnalysis,
   }) {
     final recs = <Recommendation>[];
 
@@ -45,6 +47,9 @@ class RecommendationEngine {
     final usConfidence  = ultrasoundAnalysis?.confidence ?? 0.0;
     final densityIndex  = densityAnalysis?.densityIndex;
     final densityClass  = densityAnalysis?.densityClass ?? '';
+    final mammoPrediction = mammogramAnalysis?.prediction;
+    final mammoConfidence = mammogramAnalysis?.confidence ?? 0.0;
+    final mammoFinding    = mammogramAnalysis?.findingCategory ?? '';
 
     // Patient fields - Demographics
     final age         = (patient['age'] as num?)?.toDouble() ?? 0;
@@ -100,6 +105,40 @@ class RecommendationEngine {
         priority: RecPriority.urgent,
         category: RecCategory.clinical,
         icon: '🏥',
+      ));
+    }
+
+    // ── Mammogram finding recommendations ─────────────────────────────────────
+    if (mammoPrediction == 'Suspicious') {
+      recs.add(Recommendation(
+        title: 'Suspicious Mammogram — Biopsy Recommended',
+        detail: 'Mammogram AI detected suspicious findings (${mammoFinding.isNotEmpty ? mammoFinding : "abnormal pattern"}) with ${mammoConfidence.toStringAsFixed(0)}% confidence. Core needle biopsy is recommended to confirm or exclude malignancy.',
+        priority: RecPriority.urgent,
+        category: RecCategory.clinical,
+        icon: '🔬',
+      ));
+      recs.add(Recommendation(
+        title: 'Diagnostic Mammogram + Ultrasound',
+        detail: 'Suspicious mammogram finding warrants a diagnostic mammogram with additional views (spot compression, magnification) and targeted ultrasound of the suspicious area.',
+        priority: RecPriority.high,
+        category: RecCategory.imaging,
+        icon: '🩻',
+      ));
+    } else if (mammoPrediction == 'Benign') {
+      recs.add(Recommendation(
+        title: 'Benign Mammogram Finding — Short-Interval Follow-Up',
+        detail: 'Mammogram shows benign characteristics (${mammoFinding.isNotEmpty ? mammoFinding : "benign pattern"}) with ${mammoConfidence.toStringAsFixed(0)}% confidence. Short-interval follow-up mammogram in 6 months is recommended to confirm stability.',
+        priority: isHighRisk ? RecPriority.high : RecPriority.medium,
+        category: RecCategory.imaging,
+        icon: '📅',
+      ));
+    } else if (mammoPrediction == 'Normal') {
+      recs.add(Recommendation(
+        title: 'Normal Mammogram — Routine Screening',
+        detail: 'Mammogram AI found no suspicious findings. Continue routine annual screening as per age-based guidelines.',
+        priority: RecPriority.low,
+        category: RecCategory.monitoring,
+        icon: '✅',
       ));
     }
 

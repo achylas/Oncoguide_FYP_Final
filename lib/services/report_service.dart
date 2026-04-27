@@ -31,6 +31,7 @@ class ReportService {
     required MammogramValidationResult? ultrasoundValidation,
     required UltrasoundAnalysisResult? ultrasoundAnalysis,
     DensityAnalysisResult? densityAnalysis,
+    MammogramAnalysisResult? mammogramAnalysis,
   }) async {
     try {
       final uid       = _auth.currentUser?.uid ?? 'anonymous';
@@ -87,6 +88,7 @@ class ReportService {
           tabularResult: tabularResult,
           mammogramUrl: mammogramUrl,
           densityAnalysis: densityAnalysis,
+          mammogramAnalysis: mammogramAnalysis,
         );
       }
 
@@ -155,6 +157,7 @@ class ReportService {
     required TabularPredictionResult? tabularResult,
     required String? mammogramUrl,
     DensityAnalysisResult? densityAnalysis,
+    MammogramAnalysisResult? mammogramAnalysis,
   }) async {
     final doc = _clean({
       'reportId'       : reportId,
@@ -182,6 +185,12 @@ class ReportService {
       'densityIndex'   : densityAnalysis?.densityIndex,
       'densityConfidence'    : densityAnalysis?.confidence,
       'densityProbabilities' : densityAnalysis?.probabilities,
+      // Mammogram analysis model (BI-RADS finding classification)
+      'mammoPrediction'      : mammogramAnalysis?.prediction,
+      'mammoPredictionIndex' : mammogramAnalysis?.predictionIndex,
+      'mammoConfidence'      : mammogramAnalysis?.confidence,
+      'mammoProbabilities'   : mammogramAnalysis?.probabilities,
+      'mammoFindingCategory' : mammogramAnalysis?.findingCategory,
     });
 
     final ref = await _db.collection('mammogram_reports').add(doc);
