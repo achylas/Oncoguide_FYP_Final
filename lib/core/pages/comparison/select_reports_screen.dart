@@ -23,7 +23,8 @@ class SelectReportsScreen extends StatefulWidget {
 class _SelectReportsScreenState extends State<SelectReportsScreen> {
   Map<String, dynamic>? _selectedReport1;
   Map<String, dynamic>? _selectedReport2;
-  String _selectedType = 'mammogram'; // mammogram or ultrasound
+  // 'mammogram' | 'ultrasound' | 'mixed'
+  String _selectedType = 'mammogram';
 
   @override
   Widget build(BuildContext context) {
@@ -55,33 +56,70 @@ class _SelectReportsScreenState extends State<SelectReportsScreen> {
           Container(
             color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
             padding: const EdgeInsets.all(16),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: _TypeButton(
-                    label: 'Mammogram',
-                    icon: Icons.monitor_heart_outlined,
-                    isSelected: _selectedType == 'mammogram',
-                    onTap: () => setState(() {
-                      _selectedType = 'mammogram';
-                      _selectedReport1 = null;
-                      _selectedReport2 = null;
-                    }),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _TypeButton(
+                        label: 'Mammogram',
+                        icon: Icons.monitor_heart_outlined,
+                        isSelected: _selectedType == 'mammogram',
+                        onTap: () => setState(() {
+                          _selectedType = 'mammogram';
+                          _selectedReport1 = null;
+                          _selectedReport2 = null;
+                        }),
+                      ),
+                      const SizedBox(width: 8),
+                      _TypeButton(
+                        label: 'Ultrasound',
+                        icon: Icons.waves_rounded,
+                        isSelected: _selectedType == 'ultrasound',
+                        onTap: () => setState(() {
+                          _selectedType = 'ultrasound';
+                          _selectedReport1 = null;
+                          _selectedReport2 = null;
+                        }),
+                      ),
+                      const SizedBox(width: 8),
+                      _TypeButton(
+                        label: 'Mixed',
+                        icon: Icons.merge_rounded,
+                        isSelected: _selectedType == 'mixed',
+                        onTap: () => setState(() {
+                          _selectedType = 'mixed';
+                          _selectedReport1 = null;
+                          _selectedReport2 = null;
+                        }),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _TypeButton(
-                    label: 'Ultrasound',
-                    icon: Icons.waves_rounded,
-                    isSelected: _selectedType == 'ultrasound',
-                    onTap: () => setState(() {
-                      _selectedType = 'ultrasound';
-                      _selectedReport1 = null;
-                      _selectedReport2 = null;
-                    }),
+                if (_selectedType == 'mixed') ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6366F1).withOpacity(isDark ? 0.12 : 0.07),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.3)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF6366F1)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(
+                        'Mixed mode shows all report types. Select any two reports to compare — mammogram vs ultrasound, or any combination.',
+                        style: TextStyle(
+                          fontSize: 11.5, height: 1.4,
+                          color: isDark ? const Color(0xFFB0B3C5) : const Color(0xFF4B5563),
+                        ),
+                      )),
+                    ]),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -99,6 +137,7 @@ class _SelectReportsScreenState extends State<SelectReportsScreen> {
                     date: _selectedReport1 != null
                         ? _formatDate(_selectedReport1!['createdAt'])
                         : null,
+                    typeLabel: _selectedReport1?['type']?.toString(),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -111,6 +150,7 @@ class _SelectReportsScreenState extends State<SelectReportsScreen> {
                     date: _selectedReport2 != null
                         ? _formatDate(_selectedReport2!['createdAt'])
                         : null,
+                    typeLabel: _selectedReport2?['type']?.toString(),
                   ),
                 ),
               ],
@@ -119,100 +159,141 @@ class _SelectReportsScreenState extends State<SelectReportsScreen> {
 
           // ── Reports List ──────────────────────────────────────────────────
           Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _selectedType == 'mammogram'
-                  ? ReportService.mammogramReportsStream()
-                  : ReportService.ultrasoundReportsStream(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text('Error: ${snapshot.error}',
-                        style: const TextStyle(color: Colors.red)),
-                  );
-                }
-
-                final allDocs = snapshot.data?.docs ?? [];
-                // Filter by patient ID
-                final patientDocs = allDocs
-                    .where((doc) => doc.data()['patientId'] == widget.patientId)
-                    .toList();
-
-                if (patientDocs.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          _selectedType == 'mammogram'
-                              ? Icons.monitor_heart_outlined
-                              : Icons.waves_rounded,
-                          size: 64,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No ${_selectedType} reports found',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                if (patientDocs.length < 2) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.info_outline_rounded,
-                            size: 64, color: Colors.orange),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Need at least 2 reports to compare',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Found ${patientDocs.length} report(s)',
-                          style: const TextStyle(fontSize: 14, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: patientDocs.length,
-                  itemBuilder: (ctx, i) {
-                    final doc = patientDocs[i];
-                    final data = {'id': doc.id, ...doc.data()};
-                    final isSelected1 = _selectedReport1?['id'] == doc.id;
-                    final isSelected2 = _selectedReport2?['id'] == doc.id;
-                    final isSelected = isSelected1 || isSelected2;
-
-                    return _ReportCard(
-                      data: data,
-                      isSelected: isSelected,
-                      selectionNumber: isSelected1 ? 1 : (isSelected2 ? 2 : null),
-                      onTap: () => _selectReport(data),
-                    );
-                  },
-                );
-              },
-            ),
+            child: _selectedType == 'mixed'
+                ? _buildMixedList(isDark)
+                : _buildSingleTypeList(isDark),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Single-type list (existing behaviour) ─────────────────────────────────
+  Widget _buildSingleTypeList(bool isDark) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _selectedType == 'mammogram'
+          ? ReportService.mammogramReportsStream()
+          : ReportService.ultrasoundReportsStream(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}',
+              style: const TextStyle(color: Colors.red)));
+        }
+
+        final allDocs = snapshot.data?.docs ?? [];
+        final patientDocs = allDocs
+            .where((doc) => doc.data()['patientId'] == widget.patientId)
+            .toList();
+
+        if (patientDocs.isEmpty) {
+          return _emptyState(Icons.info_outline_rounded,
+              'No $_selectedType reports found for this patient.');
+        }
+        if (patientDocs.length < 2) {
+          return _emptyState(Icons.info_outline_rounded,
+              'Need at least 2 $_selectedType reports to compare.\nFound ${patientDocs.length} report(s).');
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: patientDocs.length,
+          itemBuilder: (ctx, i) {
+            final data = {'id': patientDocs[i].id, 'type': _selectedType, ...patientDocs[i].data()};
+            final isSelected1 = _selectedReport1?['id'] == data['id'];
+            final isSelected2 = _selectedReport2?['id'] == data['id'];
+            return _ReportCard(
+              data: data,
+              isSelected: isSelected1 || isSelected2,
+              selectionNumber: isSelected1 ? 1 : (isSelected2 ? 2 : null),
+              onTap: () => _selectReport(data),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ── Mixed list (all types merged) ─────────────────────────────────────────
+  Widget _buildMixedList(bool isDark) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: ReportService.mammogramReportsStream(),
+      builder: (context, mammoSnap) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: ReportService.ultrasoundReportsStream(),
+          builder: (context, usSnap) {
+            if (mammoSnap.connectionState == ConnectionState.waiting ||
+                usSnap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final mammoDocs = (mammoSnap.data?.docs ?? [])
+                .where((d) => d.data()['patientId'] == widget.patientId)
+                .map((d) => {'id': d.id, 'type': 'mammogram', ...d.data()})
+                .toList();
+
+            final usDocs = (usSnap.data?.docs ?? [])
+                .where((d) => d.data()['patientId'] == widget.patientId)
+                .map((d) => {'id': d.id, 'type': 'ultrasound', ...d.data()})
+                .toList();
+
+            final all = [...mammoDocs, ...usDocs];
+            all.sort((a, b) {
+              final ta = a['createdAt'];
+              final tb = b['createdAt'];
+              if (ta is Timestamp && tb is Timestamp) return tb.compareTo(ta);
+              return 0;
+            });
+
+            if (all.isEmpty) {
+              return _emptyState(Icons.info_outline_rounded,
+                  'No reports found for this patient.');
+            }
+            if (all.length < 2) {
+              return _emptyState(Icons.info_outline_rounded,
+                  'Need at least 2 reports to compare.\nFound ${all.length} report(s).');
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: all.length,
+              itemBuilder: (ctx, i) {
+                final data = all[i];
+                final isSelected1 = _selectedReport1?['id'] == data['id'];
+                final isSelected2 = _selectedReport2?['id'] == data['id'];
+                return _ReportCard(
+                  data: data,
+                  isSelected: isSelected1 || isSelected2,
+                  selectionNumber: isSelected1 ? 1 : (isSelected2 ? 2 : null),
+                  onTap: () => _selectReport(data),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _emptyState(IconData icon, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 64, color: Colors.orange),
+            const SizedBox(height: 16),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 15, height: 1.5,
+                  color: AppColors.getTextSecondary(context),
+                )),
+          ],
+        ),
       ),
     );
   }
@@ -251,6 +332,10 @@ class _SelectReportsScreenState extends State<SelectReportsScreen> {
 
     final older = date1.isBefore(date2) ? _selectedReport1! : _selectedReport2!;
     final newer = date1.isBefore(date2) ? _selectedReport2! : _selectedReport1!;
+
+    // For mixed comparisons, tag each report with its type so the
+    // comparison screen can render the right sections for each side.
+    // The existing same-type logic is unchanged — 'type' is already set.
 
     Navigator.push(
       context,
@@ -295,7 +380,7 @@ class _TypeButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFF6366F1) : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
@@ -305,14 +390,14 @@ class _TypeButton extends StatelessWidget {
           ),
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: isSelected ? Colors.white : Colors.grey, size: 18),
-            const SizedBox(width: 8),
+            Icon(icon, color: isSelected ? Colors.white : Colors.grey, size: 16),
+            const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: isSelected ? Colors.white : Colors.grey,
               ),
@@ -331,11 +416,13 @@ class _SelectionBox extends StatelessWidget {
   final String label;
   final bool selected;
   final String? date;
+  final String? typeLabel;
 
   const _SelectionBox({
     required this.label,
     required this.selected,
     this.date,
+    this.typeLabel,
   });
 
   @override
@@ -371,6 +458,29 @@ class _SelectionBox extends StatelessWidget {
               color: selected ? const Color(0xFF6366F1) : Colors.grey,
             ),
           ),
+          if (selected && typeLabel != null) ...[
+            const SizedBox(height: 3),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: (typeLabel == 'mammogram'
+                        ? const Color(0xFFFF6F91)
+                        : const Color(0xFF6C63FF))
+                    .withOpacity(0.15),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                typeLabel == 'mammogram' ? 'Mammogram' : 'Ultrasound',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: typeLabel == 'mammogram'
+                      ? const Color(0xFFFF6F91)
+                      : const Color(0xFF6C63FF),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -400,6 +510,11 @@ class _ReportCard extends StatelessWidget {
     final riskPct = (data['riskPercentage'] as num?)?.toDouble() ?? 0.0;
     final riskLabel = data['riskLabel']?.toString() ?? '';
     final prediction = data['prediction']?.toString() ?? '';
+    final reportType = data['type']?.toString() ?? '';
+    final isMammo = reportType == 'mammogram';
+    final typeColor = isMammo ? const Color(0xFFFF6F91) : const Color(0xFF6C63FF);
+    final typeIcon  = isMammo ? Icons.monitor_heart_outlined : Icons.waves_rounded;
+    final typeLabel = isMammo ? 'Mammogram' : reportType == 'ultrasound' ? 'Ultrasound' : '';
 
     return GestureDetector(
       onTap: onTap,
@@ -453,14 +568,19 @@ class _ReportCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    date,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
+                  Row(children: [
+                    if (typeLabel.isNotEmpty) ...[
+                      Icon(typeIcon, size: 12, color: typeColor),
+                      const SizedBox(width: 4),
+                      Text(typeLabel, style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700, color: typeColor)),
+                      const SizedBox(width: 8),
+                    ],
+                    Text(date, style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700,
                       color: AppColors.getTextPrimary(context),
-                    ),
-                  ),
+                    )),
+                  ]),
                   const SizedBox(height: 4),
                   if (riskLabel.isNotEmpty)
                     Text(

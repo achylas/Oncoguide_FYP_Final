@@ -94,7 +94,7 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
     }
 
     // Kick off the pipeline after the first frame — guarded against double-run
-    WidgetsBinding.instance.addPostFrameCallback((_) => _runPipeline());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showConsentThenRun());
   }
 
   @override
@@ -117,6 +117,118 @@ class _AnalysisLoadingScreenState extends State<AnalysisLoadingScreen>
         _imageController.forward().then((_) => _startImageCycling());
       });
     });
+  }
+
+  // ── Consent ────────────────────────────────────────────────────────────────
+  Future<void> _showConsentThenRun() async {
+    if (_pipelineStarted) return;
+
+    final patientName = widget.selectedPatient['name']?.toString() ?? 'this patient';
+
+    final consented = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF1D1F33) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6366F1).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.verified_user_rounded, color: Color(0xFF6366F1), size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text('Patient Consent',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            ),
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Before running AI-assisted analysis for $patientName, please confirm:',
+                style: TextStyle(
+                  fontSize: 13.5, height: 1.5,
+                  color: isDark ? const Color(0xFFB0B3C5) : Colors.grey[700],
+                ),
+              ),
+              const SizedBox(height: 14),
+              _consentPoint(isDark, Icons.check_circle_outline_rounded,
+                  'The patient has been informed that AI will assist in their diagnosis.'),
+              _consentPoint(isDark, Icons.check_circle_outline_rounded,
+                  'The patient has consented to their medical images and clinical data being processed.'),
+              _consentPoint(isDark, Icons.check_circle_outline_rounded,
+                  'This AI analysis is a decision-support tool and does not replace clinical judgment.'),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFBBF24).withOpacity(0.4)),
+                ),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Icon(Icons.info_rounded, color: Color(0xFFF59E0B), size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    'Results must be reviewed by a qualified medical professional before any clinical decision.',
+                    style: TextStyle(
+                      fontSize: 11.5, height: 1.5,
+                      color: isDark ? const Color(0xFFB0B3C5) : Colors.brown[700],
+                    ),
+                  )),
+                ]),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              ),
+              child: const Text('I Confirm — Proceed',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (consented != true) {
+      if (mounted) Navigator.pop(context);
+      return;
+    }
+
+    _runPipeline();
+  }
+
+  Widget _consentPoint(bool isDark, IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, size: 16, color: const Color(0xFF10B981)),
+        const SizedBox(width: 8),
+        Expanded(child: Text(text, style: TextStyle(
+          fontSize: 12.5, height: 1.5,
+          color: isDark ? const Color(0xFFB0B3C5) : Colors.grey[700],
+        ))),
+      ]),
+    );
   }
 
   // ── Pipeline ───────────────────────────────────────────────────────────────

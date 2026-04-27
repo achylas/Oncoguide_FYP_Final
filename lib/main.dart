@@ -73,11 +73,10 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // Still checking
+        // Still checking — show a proper themed splash so the first frame
+        // is never a bare unstyled screen
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const _SplashFrame();
         }
         // Logged in — go to main screen (has nav bar)
         if (snapshot.hasData && snapshot.data != null) {
@@ -86,6 +85,40 @@ class AuthGate extends StatelessWidget {
         // Not logged in — show splash then login
         return const LandingPage();
       },
+    );
+  }
+}
+
+/// A minimal branded frame shown while Firebase auth state is resolving.
+/// Uses the same gradient as the landing page so there's no visual flash.
+class _SplashFrame extends StatelessWidget {
+  const _SplashFrame();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFFF6F91), Color(0xFF6C63FF)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset('assets/images/applogo.png', width: 100, height: 100),
+              const SizedBox(height: 24),
+              const CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2.5,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

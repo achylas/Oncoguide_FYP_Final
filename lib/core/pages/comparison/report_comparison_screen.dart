@@ -82,10 +82,19 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF0A0E21) : const Color(0xFFF0F2F8);
 
-    // Determine report type from the older report
-    final reportType = widget.olderReport['type']?.toString() ?? 'mammogram';
-    final isMammogramComparison = reportType == 'mammogram';
-    final isUltrasoundComparison = reportType == 'ultrasound';
+    // Determine report types — supports same-type AND mixed comparisons
+    final olderType = widget.olderReport['type']?.toString() ?? 'mammogram';
+    final newerType = widget.newerReport['type']?.toString() ?? 'mammogram';
+    final isMixed = olderType != newerType;
+
+    // For same-type comparisons, use the shared type
+    // For mixed, each report shows its own relevant sections
+    final isMammogramComparison = !isMixed && olderType == 'mammogram';
+    final isUltrasoundComparison = !isMixed && olderType == 'ultrasound';
+
+    // Per-report type flags (used for mixed mode)
+    final olderIsMammo = olderType == 'mammogram';
+    final newerIsMammo = newerType == 'mammogram';
 
     final olderDate = _formatDate(widget.olderReport['createdAt']);
     final newerDate = _formatDate(widget.newerReport['createdAt']);
@@ -174,6 +183,32 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
             _TrendBanner(trend: _comparison.overallTrend),
             const SizedBox(height: 20),
 
+            // ── Mixed comparison badge ──────────────────────────────────
+            if (isMixed) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withOpacity(isDark ? 0.15 : 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.35)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.merge_rounded, size: 16, color: Color(0xFF6366F1)),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    'Mixed comparison — Older: ${olderIsMammo ? "Mammogram" : "Ultrasound"}  ·  '
+                    'Newer: ${newerIsMammo ? "Mammogram" : "Ultrasound"}. '
+                    'Each report shows its own relevant findings.',
+                    style: TextStyle(
+                      fontSize: 12, height: 1.4, fontWeight: FontWeight.w600,
+                      color: isDark ? const Color(0xFFB0B3C5) : const Color(0xFF4B5563),
+                    ),
+                  )),
+                ]),
+              ),
+              const SizedBox(height: 16),
+            ],
+
             Row(
               children: [
                 Expanded(
@@ -182,6 +217,7 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
                     label: 'Older Report',
                     date: olderDate,
                     color: Colors.grey,
+                    typeLabel: isMixed ? (olderIsMammo ? 'Mammogram' : 'Ultrasound') : null,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -191,6 +227,7 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
                     label: 'Newer Report',
                     date: newerDate,
                     color: const Color(0xFF6366F1),
+                    typeLabel: isMixed ? (newerIsMammo ? 'Mammogram' : 'Ultrasound') : null,
                   ),
                 ),
               ],
@@ -229,7 +266,7 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
             const SizedBox(height: 20),
 
             // ── Ultrasound: show US prediction ────────────────────────────
-            if (isUltrasoundComparison &&
+            if ((isUltrasoundComparison || isMixed) &&
                 (olderUsPrediction.isNotEmpty || newerUsPrediction.isNotEmpty)) ...[
               _SectionTitle('Ultrasound Prediction', Icons.waves_rounded),
               const SizedBox(height: 12),
@@ -239,6 +276,8 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
                   prediction: olderUsPrediction,
                   confidence: olderUsConfidence,
                   isOlder: true,
+                  // In mixed mode, show N/A placeholder if this report isn't ultrasound
+                  placeholder: isMixed && olderIsMammo ? 'N/A (Mammogram)' : null,
                 )),
                 const SizedBox(width: 12),
                 Expanded(child: _PredictionCard(
@@ -246,13 +285,14 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
                   prediction: newerUsPrediction,
                   confidence: newerUsConfidence,
                   isOlder: false,
+                  placeholder: isMixed && newerIsMammo ? 'N/A (Mammogram)' : null,
                 )),
               ]),
               const SizedBox(height: 20),
             ],
 
             // ── Mammogram: show mammogram finding prediction ───────────────
-            if (isMammogramComparison &&
+            if ((isMammogramComparison || isMixed) &&
                 (olderMammoPrediction.isNotEmpty || newerMammoPrediction.isNotEmpty)) ...[
               _SectionTitle('Mammogram Finding', Icons.monitor_heart_rounded),
               const SizedBox(height: 12),
@@ -263,6 +303,7 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
                   confidence: olderMammoConfidence,
                   isOlder: true,
                   isMammogram: true,
+                  placeholder: isMixed && !olderIsMammo ? 'N/A (Ultrasound)' : null,
                 )),
                 const SizedBox(width: 12),
                 Expanded(child: _PredictionCard(
@@ -271,6 +312,7 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
                   confidence: newerMammoConfidence,
                   isOlder: false,
                   isMammogram: true,
+                  placeholder: isMixed && !newerIsMammo ? 'N/A (Ultrasound)' : null,
                 )),
               ]),
               const SizedBox(height: 20),
@@ -663,12 +705,14 @@ class _HeaderCard extends StatelessWidget {
   final String label;
   final String date;
   final Color color;
+  final String? typeLabel;
 
   const _HeaderCard({
     required this.isDark,
     required this.label,
     required this.date,
     required this.color,
+    this.typeLabel,
   });
 
   @override
@@ -702,6 +746,18 @@ class _HeaderCard extends StatelessWidget {
               color: AppColors.getTextPrimary(context),
             ),
           ),
+          if (typeLabel != null) ...[
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(typeLabel!,
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
+            ),
+          ],
         ],
       ),
     );
@@ -905,6 +961,7 @@ class _PredictionCard extends StatelessWidget {
   final double confidence;
   final bool isOlder;
   final bool isMammogram;
+  final String? placeholder; // shown instead of prediction in mixed mode
 
   const _PredictionCard({
     required this.isDark,
@@ -912,13 +969,39 @@ class _PredictionCard extends StatelessWidget {
     required this.confidence,
     required this.isOlder,
     this.isMammogram = false,
+    this.placeholder,
   });
 
   @override
   Widget build(BuildContext context) {
+    // If this report doesn't have this type of data, show a neutral placeholder
+    if (placeholder != null) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isOlder ? Colors.grey.withOpacity(0.3) : const Color(0xFF6366F1).withOpacity(0.3),
+            width: 2,
+          ),
+        ),
+        child: Column(children: [
+          Text(isOlder ? 'Older' : 'Newer',
+              style: TextStyle(fontSize: 11,
+                  color: isOlder ? Colors.grey : const Color(0xFF6366F1),
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          Text(placeholder!, style: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w600,
+            color: AppColors.getTextSecondary(context),
+          ), textAlign: TextAlign.center),
+        ]),
+      );
+    }
+
     Color predColor;
     if (isMammogram) {
-      // Mammogram: Normal / Benign / Suspicious
       if (prediction == 'Suspicious') {
         predColor = const Color(0xFFEF4444);
       } else if (prediction == 'Benign') {
@@ -927,7 +1010,6 @@ class _PredictionCard extends StatelessWidget {
         predColor = const Color(0xFF10B981);
       }
     } else {
-      // Ultrasound: Benign / Normal / Malignant
       if (prediction == 'Malignant') {
         predColor = const Color(0xFFEF4444);
       } else if (prediction == 'Benign') {

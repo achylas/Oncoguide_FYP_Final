@@ -507,6 +507,43 @@ class _RiskStrip extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Low Confidence Warning — shown when AI confidence < 70%
+// ─────────────────────────────────────────────────────────────────────────────
+class _LowConfidenceWarning extends StatelessWidget {
+  final double confidence;
+  const _LowConfidenceWarning({required this.confidence});
+
+  @override
+  Widget build(BuildContext context) {
+    if (confidence >= 70) return const SizedBox.shrink();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF3D2F1F) : const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFF97316).withOpacity(0.5)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Icon(Icons.warning_amber_rounded, color: Color(0xFFF97316), size: 16),
+        const SizedBox(width: 8),
+        Expanded(child: Text(
+          'Low confidence (${confidence.toStringAsFixed(0)}%). '
+          'This result is below the 70% reliability threshold. '
+          'Manual clinical review is strongly recommended before acting on this finding.',
+          style: TextStyle(
+            fontSize: 12, height: 1.5,
+            color: isDark ? const Color(0xFFE5C97E) : const Color(0xFF92400E),
+            fontWeight: FontWeight.w500,
+          ),
+        )),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 3. Ultrasound Finding Card
 // ─────────────────────────────────────────────────────────────────────────────
 class _UltrasoundFindingCard extends StatelessWidget {
@@ -597,6 +634,7 @@ class _UltrasoundFindingCard extends StatelessWidget {
               color: AppColors.getTextSecondary(context),
             ),
           ),
+          _LowConfidenceWarning(confidence: result.confidence),
           const SizedBox(height: 16),
           // Probability bars
           ...result.probabilities.entries.map((entry) {
@@ -884,6 +922,7 @@ class _MammogramFindingCard extends StatelessWidget {
               ],
             ),
           ),
+          _LowConfidenceWarning(confidence: result.confidence),
           const SizedBox(height: 16),
           // Probability bars
           ...result.probabilities.entries.map((entry) {
@@ -1155,6 +1194,7 @@ class _DensityCard extends StatelessWidget {
               ],
             ),
           ),
+          _LowConfidenceWarning(confidence: result.confidence),
           const SizedBox(height: 16),
 
           // Probability bars

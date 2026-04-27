@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:oncoguide_v2/core/conts/colors.dart';
 import 'package:oncoguide_v2/core/pages/comparison/select_reports_screen.dart';
+import 'package:oncoguide_v2/core/pages/comparison/report_comparison_screen.dart';
 import 'package:oncoguide_v2/core/pages/history/report_detail_screen.dart';
 import 'package:oncoguide_v2/core/pages/new_analysis/screens/analysis_loading_screen.dart';
 import 'package:oncoguide_v2/core/pages/new_analysis/screens/new_analysis_screen.dart';
@@ -527,169 +528,157 @@ class _ClinicalCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tab 2 — Reports (Radiologist + Doctor, sectioned)
+// Tab 2 — Reports (3 sub-tabs: Doctor | Radiologist | Comparisons)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ReportsTab extends StatelessWidget {
+class _ReportsTab extends StatefulWidget {
   final String patientId;
   const _ReportsTab({required this.patientId});
+
+  @override
+  State<_ReportsTab> createState() => _ReportsTabState();
+}
+
+class _ReportsTabState extends State<_ReportsTab>
+    with SingleTickerProviderStateMixin {
+  late TabController _subTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _subTab = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _subTab.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Column(
+      children: [
+        // ── Sub-tab bar ──────────────────────────────────────────────────
+        Container(
+          color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+          child: TabBar(
+            controller: _subTab,
+            indicatorColor: AppColors.primary,
+            indicatorWeight: 3,
+            labelColor: AppColors.primary,
+            unselectedLabelColor: AppColors.getTextSecondary(context),
+            labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            tabs: const [
+              Tab(
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.medical_services_outlined, size: 14),
+                  SizedBox(width: 5),
+                  Text('Doctor'),
+                ]),
+              ),
+              Tab(
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.local_hospital_rounded, size: 14),
+                  SizedBox(width: 5),
+                  Text('Radiologist'),
+                ]),
+              ),
+              Tab(
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.compare_arrows_rounded, size: 14),
+                  SizedBox(width: 5),
+                  Text('Comparisons'),
+                ]),
+              ),
+            ],
+          ),
+        ),
+
+        // ── Sub-tab views ────────────────────────────────────────────────
+        Expanded(
+          child: TabBarView(
+            controller: _subTab,
+            children: [
+              _DoctorReportsSubTab(patientId: widget.patientId),
+              _RadiologistReportsSubTab(patientId: widget.patientId),
+              _ComparisonReportsSubTab(patientId: widget.patientId),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Doctor Reports sub-tab ────────────────────────────────────────────────────
+class _DoctorReportsSubTab extends StatelessWidget {
+  final String patientId;
+  const _DoctorReportsSubTab({required this.patientId});
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('radiologist_reports')
+          .collection('mammogram_reports')
           .where('patientId', isEqualTo: patientId)
           .orderBy('createdAt', descending: true)
           .snapshots(),
-      builder: (context, radioSnap) {
+      builder: (context, mammoSnap) {
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: FirebaseFirestore.instance
-              .collection('mammogram_reports')
+              .collection('ultrasound_reports')
               .where('patientId', isEqualTo: patientId)
               .orderBy('createdAt', descending: true)
               .snapshots(),
-          builder: (context, mammoSnap) {
-            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('ultrasound_reports')
-                  .where('patientId', isEqualTo: patientId)
-                  .orderBy('createdAt', descending: true)
-                  .snapshots(),
-              builder: (context, usSnap) {
-                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: ComparisonService.getComparisonsForPatient(patientId),
-                  builder: (context, compSnap) {
-                    final isLoading =
-                        radioSnap.connectionState == ConnectionState.waiting ||
-                        mammoSnap.connectionState == ConnectionState.waiting ||
-                        usSnap.connectionState == ConnectionState.waiting ||
-                        compSnap.connectionState == ConnectionState.waiting;
+          builder: (context, usSnap) {
+            if (mammoSnap.connectionState == ConnectionState.waiting ||
+                usSnap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (mammoSnap.hasError || usSnap.hasError) {
+              return _IndexErrorState(
+                  error: (mammoSnap.error ?? usSnap.error).toString());
+            }
 
-                    if (isLoading) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
+            final doctorReports = [
+              ...(mammoSnap.data?.docs ?? []).map(
+                  (d) => {'id': d.id, 'type': 'mammogram', 'source': 'doctor', ...d.data()}),
+              ...(usSnap.data?.docs ?? []).map(
+                  (d) => {'id': d.id, 'type': 'ultrasound', 'source': 'doctor', ...d.data()}),
+            ];
+            doctorReports.sort((a, b) {
+              final ta = a['createdAt'];
+              final tb = b['createdAt'];
+              if (ta is Timestamp && tb is Timestamp) return tb.compareTo(ta);
+              return 0;
+            });
 
-                    if (mammoSnap.hasError || usSnap.hasError) {
-                      return _IndexErrorState(
-                        error: (mammoSnap.error ?? usSnap.error).toString(),
-                      );
-                    }
+            if (doctorReports.isEmpty) {
+              return _emptyReportState(context,
+                  'No doctor reports yet',
+                  'Run an analysis from the Imaging tab to generate a report.',
+                  Icons.medical_services_outlined);
+            }
 
-                    final radiologistReports = (radioSnap.data?.docs ?? [])
-                        .map((d) => {'id': d.id, 'source': 'radiologist', ...d.data()})
-                        .toList();
-
-                    final doctorReports = [
-                      ...(mammoSnap.data?.docs ?? []).map(
-                          (d) => {'id': d.id, 'type': 'mammogram', 'source': 'doctor', ...d.data()}),
-                      ...(usSnap.data?.docs ?? []).map(
-                          (d) => {'id': d.id, 'type': 'ultrasound', 'source': 'doctor', ...d.data()}),
-                    ];
-                    doctorReports.sort((a, b) {
-                      final ta = a['createdAt'];
-                      final tb = b['createdAt'];
-                      if (ta is Timestamp && tb is Timestamp) return tb.compareTo(ta);
-                      return 0;
-                    });
-
-                    final comparisonReports = (compSnap.data?.docs ?? [])
-                        .map((d) => {'id': d.id, 'source': 'comparison', ...d.data()})
-                        .toList();
-
-                    final hasAny = radiologistReports.isNotEmpty ||
-                        doctorReports.isNotEmpty ||
-                        comparisonReports.isNotEmpty;
-
-                    if (!hasAny) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.08),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(Icons.description_outlined,
-                                  size: 48, color: AppColors.primary.withOpacity(0.5)),
-                            ),
-                            const SizedBox(height: 16),
-                            Text('No reports yet',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.getTextSecondary(context),
-                                )),
-                            const SizedBox(height: 6),
-                            Text('Generate a report using the button below',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.getTextSecondary(context).withOpacity(0.6),
-                                )),
-                          ],
-                        ),
-                      );
-                    }
-
-                    return ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                      children: [
-                        // ── Compare Reports Button ───────────────────────────
-                        if (doctorReports.length >= 2) ...[
-                          _CompareReportsButton(
-                            patientId: patientId,
-                            patientName: radiologistReports.isNotEmpty
-                                ? radiologistReports.first['patientName']?.toString() ?? 'Unknown'
-                                : doctorReports.first['patientName']?.toString() ?? 'Unknown',
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-
-                        // ── Comparison Reports ───────────────────────────────
-                        if (comparisonReports.isNotEmpty) ...[
-                          _ReportSectionHeader(
-                            label: 'Comparison Reports',
-                            icon: Icons.compare_arrows_rounded,
-                            color: const Color(0xFF6366F1),
-                            count: comparisonReports.length,
-                          ),
-                          const SizedBox(height: 10),
-                          ...comparisonReports.map((r) => _ComparisonReportCard(data: r)),
-                          const SizedBox(height: 20),
-                        ],
-
-                        // ── Radiologist Reports ──────────────────────────────
-                        _ReportSectionHeader(
-                          label: 'Radiologist Reports',
-                          icon: Icons.local_hospital_rounded,
-                          color: const Color(0xFF6C63FF),
-                          count: radiologistReports.length,
-                        ),
-                        const SizedBox(height: 10),
-                        if (radiologistReports.isEmpty)
-                          _EmptySectionNote('No radiologist reports yet')
-                        else
-                          ...radiologistReports.map((r) => _RadiologistReportCard(data: r)),
-                        const SizedBox(height: 20),
-
-                        // ── Doctor Reports ───────────────────────────────────
-                        _ReportSectionHeader(
-                          label: 'Doctor Reports',
-                          icon: Icons.medical_services_outlined,
-                          color: const Color(0xFFFF6F91),
-                          count: doctorReports.length,
-                        ),
-                        const SizedBox(height: 10),
-                        if (doctorReports.isEmpty)
-                          _EmptySectionNote('No doctor reports yet')
-                        else
-                          ...doctorReports.map((r) => _DoctorReportCard(data: r)),
-                      ],
-                    );
-                  },
-                );
+            return ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              itemCount: doctorReports.length + (doctorReports.length >= 2 ? 1 : 0),
+              itemBuilder: (ctx, i) {
+                // Compare button at top
+                if (doctorReports.length >= 2 && i == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _CompareReportsButton(
+                      patientId: patientId,
+                      patientName: doctorReports.first['patientName']?.toString() ?? 'Unknown',
+                    ),
+                  );
+                }
+                final idx = doctorReports.length >= 2 ? i - 1 : i;
+                return _DoctorReportCard(data: doctorReports[idx]);
               },
             );
           },
@@ -699,87 +688,120 @@ class _ReportsTab extends StatelessWidget {
   }
 }
 
-class _ReportSectionHeader extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final int count;
-  const _ReportSectionHeader({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.count,
-  });
+// ── Radiologist Reports sub-tab ───────────────────────────────────────────────
+class _RadiologistReportsSubTab extends StatelessWidget {
+  final String patientId;
+  const _RadiologistReportsSubTab({required this.patientId});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: color, size: 16),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            color: AppColors.getTextPrimary(context),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            '$count',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: color,
-            ),
-          ),
-        ),
-      ],
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('radiologist_reports')
+          .where('patientId', isEqualTo: patientId)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return _IndexErrorState(error: snap.error.toString());
+        }
+
+        final reports = (snap.data?.docs ?? [])
+            .map((d) => {'id': d.id, 'source': 'radiologist', ...d.data()})
+            .toList();
+
+        if (reports.isEmpty) {
+          return _emptyReportState(context,
+              'No radiologist reports yet',
+              'Reports generated from the web portal appear here.',
+              Icons.local_hospital_rounded);
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          itemCount: reports.length,
+          itemBuilder: (ctx, i) => _RadiologistReportCard(data: reports[i]),
+        );
+      },
     );
   }
 }
 
-class _EmptySectionNote extends StatelessWidget {
-  final String message;
-  const _EmptySectionNote(this.message);
+// ── Comparison Reports sub-tab ────────────────────────────────────────────────
+class _ComparisonReportsSubTab extends StatelessWidget {
+  final String patientId;
+  const _ComparisonReportsSubTab({required this.patientId});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.getCardBackground(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.getBorder(context).withOpacity(0.4),
-          style: BorderStyle.solid,
-        ),
-      ),
-      child: Text(
-        message,
-        style: TextStyle(
-          fontSize: 13,
-          color: AppColors.getTextSecondary(context),
-          fontStyle: FontStyle.italic,
-        ),
-      ),
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: ComparisonService.getComparisonsForPatient(patientId),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return _IndexErrorState(error: snap.error.toString());
+        }
+
+        final reports = (snap.data?.docs ?? [])
+            .map((d) => {'id': d.id, 'source': 'comparison', ...d.data()})
+            .toList();
+
+        if (reports.isEmpty) {
+          return _emptyReportState(context,
+              'No comparison reports yet',
+              'Go to the Doctor tab and tap "Compare Reports" to create one.',
+              Icons.compare_arrows_rounded);
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          itemCount: reports.length,
+          itemBuilder: (ctx, i) => _ComparisonReportCard(data: reports[i]),
+        );
+      },
     );
   }
+}
+
+Widget _emptyReportState(BuildContext context, String title, String subtitle, IconData icon) {
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 48, color: AppColors.primary.withOpacity(0.5)),
+          ),
+          const SizedBox(height: 16),
+          Text(title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.getTextSecondary(context),
+              )),
+          const SizedBox(height: 6),
+          Text(subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: AppColors.getTextSecondary(context).withOpacity(0.6),
+              )),
+        ],
+      ),
+    ),
+  );
 }
 
 // Radiologist report card
@@ -795,8 +817,16 @@ class _RadiologistReportCard extends StatelessWidget {
     final scanLabel    = data['scanLabel']?.toString() ?? 'Scan';
     final ccUrl        = data['ccImageUrl']?.toString();
     final mloUrl       = data['mloImageUrl']?.toString();
-    final thumbUrl     = ccUrl ?? mloUrl;
+    final usUrl        = data['ultrasoundUrl']?.toString();
+    final thumbUrl     = ccUrl ?? mloUrl ?? usUrl;
     final confidence   = (data['densityConfidence'] as num?)?.toDouble() ?? 0.0;
+
+    // Collect all available scan images with labels
+    final scanImages = <Map<String, String>>[
+      if (ccUrl != null && ccUrl.isNotEmpty)  {'url': ccUrl,  'label': 'CC'},
+      if (mloUrl != null && mloUrl.isNotEmpty) {'url': mloUrl, 'label': 'MLO'},
+      if (usUrl != null && usUrl.isNotEmpty)   {'url': usUrl,  'label': 'US'},
+    ];
 
     String dateStr = '';
     final ts = data['createdAt'];
@@ -828,94 +858,170 @@ class _RadiologistReportCard extends StatelessWidget {
             ),
           ],
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Thumbnail
-            ClipRRect(
-              borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
-              child: SizedBox(
-                width: 80,
-                height: 88,
-                child: thumbUrl != null
-                    ? Image.network(thumbUrl, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _thumbPlaceholder(
-                            const Color(0xFF6C63FF), Icons.monitor_heart_outlined))
-                    : _thumbPlaceholder(
-                        const Color(0xFF6C63FF), Icons.monitor_heart_outlined),
-              ),
+            // ── Top row: thumbnail + info + chevron ──────────────────────
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(14),
+                    bottomLeft: scanImages.isEmpty ? const Radius.circular(14) : Radius.zero,
+                  ),
+                  child: SizedBox(
+                    width: 80,
+                    height: 88,
+                    child: thumbUrl != null
+                        ? Image.network(thumbUrl, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _thumbPlaceholder(
+                                const Color(0xFF6C63FF), Icons.monitor_heart_outlined))
+                        : _thumbPlaceholder(
+                            const Color(0xFF6C63FF), Icons.monitor_heart_outlined),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF6C63FF).withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                'Radiologist',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF6C63FF),
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              dateStr,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.getTextSecondary(context),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          scanLabel,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.getTextPrimary(context),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          children: [
+                            if (densityLabel.isNotEmpty)
+                              _MiniChip(densityLabel, const Color(0xFF6C63FF)),
+                            if (riskLabel.isNotEmpty)
+                              _MiniChip(
+                                riskLabel,
+                                riskLabel == 'High Risk'
+                                    ? const Color(0xFFEF4444)
+                                    : const Color(0xFF10B981),
+                              ),
+                            if (confidence > 0)
+                              _MiniChip(
+                                '${confidence.toStringAsFixed(0)}% conf',
+                                Colors.grey,
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: Icon(Icons.chevron_right_rounded,
+                      color: AppColors.getTextSecondary(context)),
+                ),
+              ],
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
+
+            // ── Uploaded scan images strip ────────────────────────────────
+            if (scanImages.isNotEmpty) ...[
+              Divider(height: 1, color: const Color(0xFF6C63FF).withOpacity(0.15)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6C63FF).withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            'Radiologist',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF6C63FF),
-                            ),
-                          ),
+                    Row(children: [
+                      const Icon(Icons.image_outlined, size: 12, color: Color(0xFF6C63FF)),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Uploaded Scans',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.getTextSecondary(context),
+                          letterSpacing: 0.3,
                         ),
-                        const Spacer(),
-                        Text(
-                          dateStr,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.getTextSecondary(context),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      scanLabel,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.getTextPrimary(context),
                       ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Wrap(
-                      spacing: 6,
-                      children: [
-                        if (densityLabel.isNotEmpty)
-                          _MiniChip(densityLabel, const Color(0xFF6C63FF)),
-                        if (riskLabel.isNotEmpty)
-                          _MiniChip(
-                            riskLabel,
-                            riskLabel == 'High Risk'
-                                ? const Color(0xFFEF4444)
-                                : const Color(0xFF10B981),
-                          ),
-                        if (confidence > 0)
-                          _MiniChip(
-                            '${confidence.toStringAsFixed(0)}% conf',
-                            Colors.grey,
-                          ),
-                      ],
+                    ]),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 80,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: scanImages.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (ctx, i) {
+                          final img = scanImages[i];
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: SizedBox(
+                                  width: 60,
+                                  height: 60,
+                                  child: Image.network(
+                                    img['url']!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      color: const Color(0xFF6C63FF).withOpacity(0.1),
+                                      child: const Icon(Icons.broken_image_rounded,
+                                          size: 20, color: Color(0xFF6C63FF)),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                img['label']!,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF6C63FF),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: Icon(Icons.chevron_right_rounded,
-                  color: AppColors.getTextSecondary(context)),
-            ),
+            ],
           ],
         ),
       ),
@@ -924,13 +1030,92 @@ class _RadiologistReportCard extends StatelessWidget {
 }
 
 // Comparison report card
-class _ComparisonReportCard extends StatelessWidget {
+class _ComparisonReportCard extends StatefulWidget {
   final Map<String, dynamic> data;
   const _ComparisonReportCard({required this.data});
 
   @override
+  State<_ComparisonReportCard> createState() => _ComparisonReportCardState();
+}
+
+class _ComparisonReportCardState extends State<_ComparisonReportCard> {
+  bool _loading = false;
+
+  /// Fetch both source reports from Firestore and open the comparison screen.
+  Future<void> _openComparison() async {
+    final olderReportId = widget.data['olderReportId']?.toString();
+    final newerReportId = widget.data['newerReportId']?.toString();
+    final reportType    = widget.data['reportType']?.toString() ?? 'mammogram';
+    final patientName   = widget.data['patientName']?.toString() ?? 'Unknown';
+    final patientId     = widget.data['patientId']?.toString() ?? '';
+
+    if (olderReportId == null || newerReportId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Source reports not found for this comparison.'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      // Determine which collection to fetch from
+      final collection = reportType == 'ultrasound' ? 'ultrasound_reports' : 'mammogram_reports';
+
+      final results = await Future.wait([
+        FirebaseFirestore.instance.collection(collection).doc(olderReportId).get(),
+        FirebaseFirestore.instance.collection(collection).doc(newerReportId).get(),
+      ]);
+
+      final olderDoc = results[0];
+      final newerDoc = results[1];
+
+      if (!olderDoc.exists || !newerDoc.exists) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('One or both source reports have been deleted.'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+        return;
+      }
+
+      final olderReport = {'id': olderDoc.id, 'type': reportType, ...olderDoc.data()!};
+      final newerReport = {'id': newerDoc.id, 'type': reportType, ...newerDoc.data()!};
+
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ReportComparisonScreen(
+            olderReport: olderReport,
+            newerReport: newerReport,
+            patientName: patientName,
+            patientId: patientId,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to load reports: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark       = Theme.of(context).brightness == Brightness.dark;
+    final data         = widget.data;
     const color        = Color(0xFF6366F1);
     final reportType   = data['reportType']?.toString() ?? '';
     final isMammo      = reportType == 'mammogram';
@@ -939,7 +1124,6 @@ class _ComparisonReportCard extends StatelessWidget {
     final riskChange   = (data['riskChange'] as num?)?.toDouble() ?? 0.0;
     final summary      = data['summary']?.toString() ?? '';
 
-    // Trend colour + icon
     Color trendColor;
     IconData trendIcon;
     String trendLabel;
@@ -973,7 +1157,6 @@ class _ComparisonReportCard extends StatelessWidget {
       dateStr = '${dt.day} ${m[dt.month - 1]} ${dt.year}';
     }
 
-    // Older / newer report dates
     String olderDate = '', newerDate = '';
     final ots = data['olderReportDate'];
     final nts = data['newerReportDate'];
@@ -986,121 +1169,144 @@ class _ComparisonReportCard extends StatelessWidget {
       newerDate = '${dt.day}/${dt.month}/${dt.year}';
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.35), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(isDark ? 0.08 : 0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Header row ──────────────────────────────────────────────
-            Row(children: [
-              // "Comparison Report" badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                  ),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.compare_arrows_rounded, size: 11, color: Colors.white),
-                  const SizedBox(width: 4),
-                  const Text('Comparison Report',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
-                ]),
+    return GestureDetector(
+      onTap: _loading ? null : _openComparison,
+      child: AnimatedOpacity(
+        opacity: _loading ? 0.6 : 1.0,
+        duration: const Duration(milliseconds: 200),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withOpacity(0.35), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(isDark ? 0.08 : 0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
-              const SizedBox(width: 6),
-              // Type chip
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Text(typeLabel,
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
-              ),
-              const Spacer(),
-              Text(dateStr,
-                  style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
-            ]),
-            const SizedBox(height: 10),
-
-            // ── Compared dates ───────────────────────────────────────────
-            if (olderDate.isNotEmpty && newerDate.isNotEmpty)
-              Row(children: [
-                const Icon(Icons.history_rounded, size: 13, color: Color(0xFF6366F1)),
-                const SizedBox(width: 5),
-                Text('$olderDate  →  $newerDate',
-                    style: TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600,
-                      color: AppColors.getTextSecondary(context),
-                    )),
-              ]),
-            const SizedBox(height: 8),
-
-            // ── Trend + risk change ──────────────────────────────────────
-            Row(children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: trendColor.withOpacity(isDark ? 0.15 : 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: trendColor.withOpacity(0.3)),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(trendIcon, size: 14, color: trendColor),
-                  const SizedBox(width: 5),
-                  Text(trendLabel,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: trendColor)),
-                ]),
-              ),
-              if (riskChange != 0) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: (riskChange < 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444))
-                        .withOpacity(isDark ? 0.15 : 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${riskChange > 0 ? '+' : ''}${riskChange.toStringAsFixed(1)}% risk',
-                    style: TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w700,
-                      color: riskChange < 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                    ),
-                  ),
-                ),
-              ],
-            ]),
-
-            // ── Summary ──────────────────────────────────────────────────
-            if (summary.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(summary,
-                  style: TextStyle(
-                    fontSize: 12, height: 1.5,
-                    color: AppColors.getTextSecondary(context),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis),
             ],
-          ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header row ─────────────────────────────────────────
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                      ),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.compare_arrows_rounded, size: 11, color: Colors.white),
+                      const SizedBox(width: 4),
+                      const Text('Comparison Report',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
+                    ]),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Text(typeLabel,
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
+                  ),
+                  const Spacer(),
+                  if (_loading)
+                    const SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: color))
+                  else
+                    const Icon(Icons.chevron_right_rounded, size: 18, color: color),
+                  const SizedBox(width: 4),
+                  Text(dateStr,
+                      style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
+                ]),
+                const SizedBox(height: 10),
+
+                // ── Compared dates ──────────────────────────────────────
+                if (olderDate.isNotEmpty && newerDate.isNotEmpty)
+                  Row(children: [
+                    const Icon(Icons.history_rounded, size: 13, color: Color(0xFF6366F1)),
+                    const SizedBox(width: 5),
+                    Text('$olderDate  →  $newerDate',
+                        style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600,
+                          color: AppColors.getTextSecondary(context),
+                        )),
+                  ]),
+                const SizedBox(height: 8),
+
+                // ── Trend + risk change ─────────────────────────────────
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: trendColor.withOpacity(isDark ? 0.15 : 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: trendColor.withOpacity(0.3)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(trendIcon, size: 14, color: trendColor),
+                      const SizedBox(width: 5),
+                      Text(trendLabel,
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: trendColor)),
+                    ]),
+                  ),
+                  if (riskChange != 0) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: (riskChange < 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444))
+                            .withOpacity(isDark ? 0.15 : 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${riskChange > 0 ? '+' : ''}${riskChange.toStringAsFixed(1)}% risk',
+                        style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700,
+                          color: riskChange < 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                        ),
+                      ),
+                    ),
+                  ],
+                ]),
+
+                // ── Summary ─────────────────────────────────────────────
+                if (summary.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(summary,
+                      style: TextStyle(
+                        fontSize: 12, height: 1.5,
+                        color: AppColors.getTextSecondary(context),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ],
+
+                // ── Tap hint ─────────────────────────────────────────────
+                const SizedBox(height: 10),
+                Row(children: [
+                  const Icon(Icons.touch_app_rounded, size: 12, color: color),
+                  const SizedBox(width: 4),
+                  Text('Tap to view full side-by-side comparison',
+                      style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w600,
+                        color: color.withOpacity(0.7),
+                      )),
+                ]),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1977,7 +2183,25 @@ class _GenerateReportScreenState extends State<_GenerateReportScreen> {
     final mammograms  = _mammograms;
     final ultrasounds = _ultrasounds;
     final patient     = _patient;
-    final docs        = [...mammograms, ...ultrasounds];
+
+    // Split mammograms into CC and MLO by scanLabel
+    // Web portal saves with labels like "Scan (CC)" and "Scan (MLO)"
+    final ccImages  = mammograms.where((d) {
+      final label = d['scanLabel']?.toString().toUpperCase() ?? '';
+      // If no label distinction exists, treat all as CC (fallback)
+      return label.contains('(CC)') || (!label.contains('(MLO)') && mammograms.every((x) =>
+          !(x['scanLabel']?.toString().toUpperCase() ?? '').contains('(MLO)')));
+    }).toList();
+    final mloImages = mammograms.where((d) {
+      final label = d['scanLabel']?.toString().toUpperCase() ?? '';
+      return label.contains('(MLO)');
+    }).toList();
+
+    // If no label-based split is possible, show all in CC and none in MLO
+    final ccList  = ccImages.isNotEmpty ? ccImages : mammograms;
+    final mloList = mloImages;
+
+    final docs = [...mammograms, ...ultrasounds];
 
     if (docs.isEmpty) {
       return Center(
@@ -2064,7 +2288,7 @@ class _GenerateReportScreenState extends State<_GenerateReportScreen> {
                 ),
                 const SizedBox(height: 10),
                 _SelectionImageList(
-                  docs: mammograms,
+                  docs: ccList,
                   selected: _selectedCc,
                   accentColor: const Color(0xFFFF6F91),
                   onSelect: (doc) => setState(() => _selectedCc = doc),
@@ -2081,7 +2305,7 @@ class _GenerateReportScreenState extends State<_GenerateReportScreen> {
                 ),
                 const SizedBox(height: 10),
                 _SelectionImageList(
-                  docs: mammograms,
+                  docs: mloList.isNotEmpty ? mloList : ccList,
                   selected: _selectedMlo,
                   accentColor: const Color(0xFFFF9A3C),
                   onSelect: (doc) => setState(() => _selectedMlo = doc),

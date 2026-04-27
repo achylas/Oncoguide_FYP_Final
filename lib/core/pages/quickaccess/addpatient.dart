@@ -57,13 +57,58 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
     if (currentStep == 0) {
       if (nameController.text.trim().isEmpty) error = 'Full name is required';
       else if (ageController.text.trim().isEmpty) error = 'Age is required';
-      else if (weightController.text.trim().isEmpty) error = 'Weight is required';
-      else if (imcController.text.trim().isEmpty) error = 'BMI is required';
+      else {
+        final age = int.tryParse(ageController.text.trim()) ?? 0;
+        if (age < 10 || age > 100) error = 'Age must be between 10 and 100.';
+      }
+      if (error == null && weightController.text.trim().isEmpty) error = 'Weight is required';
+      else if (error == null) {
+        final w = double.tryParse(weightController.text.trim()) ?? 0;
+        if (w < 20) error = 'Weight must be at least 20 kg.';
+      }
+      if (error == null && imcController.text.trim().isEmpty) error = 'BMI is required';
+      else if (error == null) {
+        final bmi = double.tryParse(imcController.text.trim()) ?? 0;
+        if (bmi < 10 || bmi > 60) error = 'BMI must be between 10 and 60.';
+      }
     } else if (currentStep == 1) {
-      if (menarcheAgeController.text.trim().isEmpty) error = 'Menarche age is required';
-      else if (childrenController.text.trim().isEmpty) error = 'Number of children is required';
-      else if (breastfeedingController.text.trim().isEmpty) error = 'Breastfeeding duration is required';
-      else if (biopsiesController.text.trim().isEmpty) error = 'Number of biopsies is required';
+      final patientAge = int.tryParse(ageController.text.trim()) ?? 0;
+
+      if (menarcheAgeController.text.trim().isEmpty) {
+        error = 'Menarche age is required';
+      } else {
+        final menarche = int.tryParse(menarcheAgeController.text.trim()) ?? 0;
+        if (menarche < 6 || menarche > 30) {
+          error = 'Menarche age must be between 6 and 30.';
+        } else if (patientAge > 0 && menarche >= patientAge) {
+          error = 'Menarche age must be less than the patient\'s current age ($patientAge).';
+        }
+      }
+
+      if (error == null && menopauseAgeController.text.trim().isNotEmpty) {
+        final menopause = int.tryParse(menopauseAgeController.text.trim()) ?? 0;
+        final menarche  = int.tryParse(menarcheAgeController.text.trim()) ?? 0;
+        if (menopause < 20 || menopause > 100) {
+          error = 'Menopause age must be between 20 and 100.';
+        } else if (menarche > 0 && menopause <= menarche) {
+          error = 'Menopause age must be greater than menarche age ($menarche).';
+        } else if (patientAge > 0 && menopause > patientAge) {
+          error = 'Menopause age cannot exceed the patient\'s current age ($patientAge).';
+        }
+      }
+
+      if (error == null && firstChildAgeController.text.trim().isNotEmpty) {
+        final firstChild = int.tryParse(firstChildAgeController.text.trim()) ?? 0;
+        if (firstChild < 10) {
+          error = 'Age at first child must be at least 10.';
+        } else if (patientAge > 0 && firstChild >= patientAge) {
+          error = 'Age at first child must be less than the patient\'s current age ($patientAge).';
+        }
+      }
+
+      if (error == null && childrenController.text.trim().isEmpty) error = 'Number of children is required';
+      if (error == null && breastfeedingController.text.trim().isEmpty) error = 'Breastfeeding duration is required';
+      if (error == null && biopsiesController.text.trim().isEmpty) error = 'Number of biopsies is required';
     }
     if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

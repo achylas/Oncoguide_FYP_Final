@@ -16,6 +16,9 @@ class AllPatientsScreen extends StatefulWidget {
 class _AllPatientsScreenState extends State<AllPatientsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _riskFilter = 'All'; // 'All' | 'High Risk' | 'Cancer' | 'Normal'
 
   @override
   void initState() {
@@ -26,6 +29,7 @@ class _AllPatientsScreenState extends State<AllPatientsScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -248,30 +252,268 @@ class _AllPatientsScreenState extends State<AllPatientsScreen>
   }
 
   Widget _buildPage1AllPatientsView() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildAllPatientsCard(),
-          const SizedBox(height: 24),
-          _buildSectionHeader(
-            'Non-Cancerous',
-            Icons.favorite_outline,
-            AppColors.success,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+    return Column(
+      children: [
+        // ── Search bar ──────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
+              style: TextStyle(color: AppColors.getTextPrimary(context)),
+              decoration: InputDecoration(
+                hintText: 'Search patients by name…',
+                hintStyle: TextStyle(color: AppColors.getTextSecondary(context), fontSize: 14),
+                prefixIcon: Icon(Icons.search_rounded, color: AppColors.getTextSecondary(context)),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: Icon(Icons.clear_rounded, color: AppColors.getTextSecondary(context)),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
           ),
-          const SizedBox(height: 12),
-          _buildCategoryGrid(nonCancerousCategories, 'non-cancer'),
-          const SizedBox(height: 24),
-          _buildSectionHeader(
-            'Pre-Invasive',
-            Icons.warning_amber_rounded,
-            AppColors.warning,
+        ),
+        const SizedBox(height: 10),
+
+        // ── Risk filter chips ───────────────────────────────────────────
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: ['All', 'High Risk', 'Cancer', 'Normal', 'Benign'].map((label) {
+              final selected = _riskFilter == label;
+              final chipColor = label == 'Cancer'
+                  ? const Color(0xFFDC2626)
+                  : label == 'High Risk'
+                      ? const Color(0xFFEF4444)
+                      : label == 'Normal'
+                          ? const Color(0xFF10B981)
+                          : label == 'Benign'
+                              ? const Color(0xFFF59E0B)
+                              : AppColors.primary;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(label),
+                  selected: selected,
+                  onSelected: (_) => setState(() => _riskFilter = label),
+                  backgroundColor: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+                  selectedColor: chipColor.withOpacity(isDark ? 0.25 : 0.15),
+                  checkmarkColor: chipColor,
+                  labelStyle: TextStyle(
+                    color: selected ? chipColor : AppColors.getTextSecondary(context),
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 12,
+                  ),
+                  side: BorderSide(
+                    color: selected ? chipColor.withOpacity(0.5) : AppColors.getBorder(context),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+              );
+            }).toList(),
           ),
-          const SizedBox(height: 12),
-          _buildCategoryGrid(preInvasiveCategories, 'pre-invasive'),
-        ],
-      ),
+        ),
+        const SizedBox(height: 8),
+
+        // ── Patient list ────────────────────────────────────────────────
+        Expanded(
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('patients')
+                .orderBy('createdAt', descending: true)
+                .snapshots(),
+            builder: (context, patSnap) {
+              return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: FirebaseFirestore.instance
+                    .collection('risk_patients')
+                    .where('flaggedBy', isEqualTo: uid)
+                    .snapshots(),
+                builder: (context, riskSnap) {
+                  return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('cancer_patients')
+                        .where('flaggedBy', isEqualTo: uid)
+                        .snapshots(),
+                    builder: (context, cancerSnap) {
+                      if (patSnap.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      final riskIds   = (riskSnap.data?.docs ?? []).map((d) => d.id).toSet();
+                      final cancerIds = (cancerSnap.data?.docs ?? []).map((d) => d.id).toSet();
+
+                      var patients = (patSnap.data?.docs ?? [])
+                          .map((d) => {'id': d.id, ...d.data()})
+                          .toList();
+
+                      // Apply search filter
+                      if (_searchQuery.isNotEmpty) {
+                        patients = patients.where((p) {
+                          final name = p['name']?.toString().toLowerCase() ?? '';
+                          return name.contains(_searchQuery);
+                        }).toList();
+                      }
+
+                      // Apply risk filter
+                      if (_riskFilter != 'All') {
+                        patients = patients.where((p) {
+                          final id = p['id']?.toString() ?? '';
+                          switch (_riskFilter) {
+                            case 'Cancer':    return cancerIds.contains(id);
+                            case 'High Risk': return riskIds.contains(id);
+                            default:          return true; // Normal/Benign — show all for now
+                          }
+                        }).toList();
+                      }
+
+                      if (patients.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.search_off_rounded, size: 48,
+                                  color: AppColors.getTextSecondary(context).withOpacity(0.4)),
+                              const SizedBox(height: 12),
+                              Text(
+                                _searchQuery.isNotEmpty
+                                    ? 'No patients match "$_searchQuery"'
+                                    : 'No patients in this category',
+                                style: TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w600,
+                                  color: AppColors.getTextSecondary(context),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      return ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+                        itemCount: patients.length,
+                        itemBuilder: (ctx, i) {
+                          final p = patients[i];
+                          final pid = p['id']?.toString() ?? '';
+                          final isCancer   = cancerIds.contains(pid);
+                          final isHighRisk = riskIds.contains(pid);
+                          final name = p['name']?.toString() ?? 'Unknown';
+                          final age  = p['age']?.toString() ?? '—';
+
+                          Color badgeColor;
+                          String badgeText;
+                          if (isCancer) {
+                            badgeColor = const Color(0xFFDC2626);
+                            badgeText  = 'Cancer';
+                          } else if (isHighRisk) {
+                            badgeColor = const Color(0xFFEF4444);
+                            badgeText  = 'High Risk';
+                          } else {
+                            badgeColor = const Color(0xFF10B981);
+                            badgeText  = 'Active';
+                          }
+
+                          return GestureDetector(
+                            onTap: () => Navigator.pushNamed(
+                              context, '/patients_hub',
+                              arguments: {'patientId': pid, 'patientName': name},
+                            ),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: badgeColor.withOpacity(0.2), width: 1.5),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+                                    blurRadius: 8, offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Row(children: [
+                                // Avatar
+                                Container(
+                                  width: 44, height: 44,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [badgeColor.withOpacity(0.8), badgeColor],
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Center(child: Text(
+                                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                    style: const TextStyle(
+                                      fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                                  )),
+                                ),
+                                const SizedBox(width: 12),
+                                // Info
+                                Expanded(child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(name, style: TextStyle(
+                                      fontSize: 15, fontWeight: FontWeight.w700,
+                                      color: AppColors.getTextPrimary(context),
+                                    )),
+                                    Text('Age: $age', style: TextStyle(
+                                      fontSize: 12, color: AppColors.getTextSecondary(context),
+                                    )),
+                                  ],
+                                )),
+                                // Badge
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: badgeColor.withOpacity(isDark ? 0.2 : 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: badgeColor.withOpacity(0.4)),
+                                  ),
+                                  child: Text(badgeText, style: TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w700, color: badgeColor,
+                                  )),
+                                ),
+                                const SizedBox(width: 6),
+                                Icon(Icons.chevron_right_rounded,
+                                    color: AppColors.getTextSecondary(context)),
+                              ]),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
