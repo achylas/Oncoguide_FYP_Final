@@ -74,6 +74,32 @@ class ReportService {
         );
       }
 
+      // Upload density GradCAM (CC mammogram heatmap from Siamese model)
+      String? densityGradcamUrl;
+      if (densityAnalysis != null && densityAnalysis.hasGradcam) {
+        try {
+          final bytes = Uint8List.fromList(base64Decode(densityAnalysis.gradcamImage));
+          densityGradcamUrl = await StorageService.uploadBytes(
+            bytes: bytes,
+            folder: 'gradcam',
+            fileName: '${reportId}_density.png',
+          );
+        } catch (_) {}
+      }
+
+      // Upload mammogram finding GradCAM (EfficientNet-B0 heatmap)
+      String? mammoGradcamUrl;
+      if (mammogramAnalysis != null && mammogramAnalysis.hasGradcam) {
+        try {
+          final bytes = Uint8List.fromList(base64Decode(mammogramAnalysis.gradcamImage));
+          mammoGradcamUrl = await StorageService.uploadBytes(
+            bytes: bytes,
+            folder: 'gradcam',
+            fileName: '${reportId}_mammo.png',
+          );
+        } catch (_) {}
+      }
+
       // ── Write mammogram report ───────────────────────────────────────────
       String? mammogramReportId;
       if (imagingTypes.contains(ImagingType.mammogram) && mammogramFile != null) {
@@ -89,6 +115,8 @@ class ReportService {
           mammogramUrl: mammogramUrl,
           densityAnalysis: densityAnalysis,
           mammogramAnalysis: mammogramAnalysis,
+          densityGradcamUrl: densityGradcamUrl,
+          mammoGradcamUrl: mammoGradcamUrl,
         );
       }
 
@@ -158,6 +186,8 @@ class ReportService {
     required String? mammogramUrl,
     DensityAnalysisResult? densityAnalysis,
     MammogramAnalysisResult? mammogramAnalysis,
+    String? densityGradcamUrl,
+    String? mammoGradcamUrl,
   }) async {
     final doc = _clean({
       'reportId'       : reportId,
@@ -179,18 +209,20 @@ class ReportService {
       'baseValue'      : tabularResult?.baseValue,
       // Image
       'mammogramUrl'   : mammogramUrl,
-      // Density model (if CC + MLO were both uploaded)
-      'densityClass'   : densityAnalysis?.densityClass,
-      'densityLabel'   : densityAnalysis?.densityLabel,
-      'densityIndex'   : densityAnalysis?.densityIndex,
+      // Density model
+      'densityClass'         : densityAnalysis?.densityClass,
+      'densityLabel'         : densityAnalysis?.densityLabel,
+      'densityIndex'         : densityAnalysis?.densityIndex,
       'densityConfidence'    : densityAnalysis?.confidence,
       'densityProbabilities' : densityAnalysis?.probabilities,
+      'densityGradcamUrl'    : densityGradcamUrl,   // ← Supabase URL for density heatmap
       // Mammogram analysis model (BI-RADS finding classification)
       'mammoPrediction'      : mammogramAnalysis?.prediction,
       'mammoPredictionIndex' : mammogramAnalysis?.predictionIndex,
       'mammoConfidence'      : mammogramAnalysis?.confidence,
       'mammoProbabilities'   : mammogramAnalysis?.probabilities,
       'mammoFindingCategory' : mammogramAnalysis?.findingCategory,
+      'mammoGradcamUrl'      : mammoGradcamUrl,     // ← Supabase URL for mammogram finding heatmap
     });
 
     final ref = await _db.collection('mammogram_reports').add(doc);

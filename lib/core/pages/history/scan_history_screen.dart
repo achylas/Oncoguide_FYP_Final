@@ -219,14 +219,94 @@ class _StreamTab extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 enum _CardType { mammogramReport, ultrasoundReport, riskPatient, cancerPatient }
 
-class _ReportCard extends StatelessWidget {
+class _ReportCard extends StatefulWidget {
   final Map<String, dynamic> data;
   final _CardType cardType;
   const _ReportCard({required this.data, required this.cardType});
 
   @override
+  State<_ReportCard> createState() => _ReportCardState();
+}
+
+class _ReportCardState extends State<_ReportCard> {
+  bool _deleting = false;
+
+  // Which Firestore collection this card lives in
+  String get _collection {
+    switch (widget.cardType) {
+      case _CardType.mammogramReport: return 'mammogram_reports';
+      case _CardType.ultrasoundReport: return 'ultrasound_reports';
+      case _CardType.cancerPatient: return 'cancer_patients';
+      case _CardType.riskPatient: return 'risk_patients';
+    }
+  }
+
+  Future<void> _confirmAndDelete() async {
+    final docId = widget.data['id']?.toString();
+    if (docId == null || docId.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).brightness == Brightness.dark
+            ? const Color(0xFF1A1D2E)
+            : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(children: [
+          Icon(Icons.delete_rounded, color: Colors.red, size: 24),
+          SizedBox(width: 10),
+          Text('Delete Report', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+        ]),
+        content: Text(
+          'This will permanently delete the report for '
+          '"${widget.data['patientName'] ?? 'this patient'}" '
+          'from the database. This cannot be undone.',
+          style: const TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection(_collection)
+          .doc(docId)
+          .delete();
+      // The stream will automatically remove the card from the list
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to delete: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+        setState(() => _deleting = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final data = widget.data;
+    final cardType = widget.cardType;
 
     final patientName   = data['patientName']?.toString() ?? 'Unknown';
     final riskLabel     = data['riskLabel']?.toString() ?? '';
@@ -288,111 +368,139 @@ class _ReportCard extends StatelessWidget {
     final thumbUrl = mammogramUrl ?? ultrasoundUrl ?? gradcamUrl;
 
     return GestureDetector(
-      onTap: () => Navigator.push(
+      onTap: _deleting ? null : () => Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => ReportDetailScreen(reportData: data),
         ),
       ),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 14),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Thumbnail
-            ClipRRect(
-              borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
-              child: SizedBox(
-                width: 90,
-                height: 90,
-                child: thumbUrl != null
-                    ? Image.network(
-                        thumbUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _thumbPlaceholder(typeColor, typeIcon),
-                      )
-                    : _thumbPlaceholder(typeColor, typeIcon),
+      child: AnimatedOpacity(
+        opacity: _deleting ? 0.5 : 1.0,
+        duration: const Duration(milliseconds: 200),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
               ),
-            ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // Thumbnail
+              ClipRRect(
+                borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
+                child: SizedBox(
+                  width: 90,
+                  height: 90,
+                  child: thumbUrl != null
+                      ? Image.network(
+                          thumbUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _thumbPlaceholder(typeColor, typeIcon),
+                        )
+                      : _thumbPlaceholder(typeColor, typeIcon),
+                ),
+              ),
 
-            // Info
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(typeIcon, size: 13, color: typeColor),
-                        const SizedBox(width: 4),
-                        Text(
-                          cardType == _CardType.mammogramReport ? 'Mammogram'
-                              : cardType == _CardType.ultrasoundReport ? 'Ultrasound'
-                              : cardType == _CardType.cancerPatient ? 'Cancer Patient'
-                              : 'High Risk Patient',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: typeColor),
-                        ),
-                        const Spacer(),
-                        if (dateStr.isNotEmpty)
-                          Text(dateStr, style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      patientName,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.getTextPrimary(context),
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: badgeColor.withOpacity(isDark ? 0.2 : 0.1),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: badgeColor.withOpacity(0.4)),
-                          ),
-                          child: Text(
-                            badgeText,
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: badgeColor),
-                          ),
-                        ),
-                        if (riskPct > 0) ...[
-                          const SizedBox(width: 8),
+              // Info
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(typeIcon, size: 13, color: typeColor),
+                          const SizedBox(width: 4),
                           Text(
-                            '${riskPct.toStringAsFixed(0)}% risk',
-                            style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context)),
+                            cardType == _CardType.mammogramReport ? 'Mammogram'
+                                : cardType == _CardType.ultrasoundReport ? 'Ultrasound'
+                                : cardType == _CardType.cancerPatient ? 'Cancer Patient'
+                                : 'High Risk Patient',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: typeColor),
                           ),
+                          const Spacer(),
+                          if (dateStr.isNotEmpty)
+                            Text(dateStr, style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
                         ],
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        patientName,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.getTextPrimary(context),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: badgeColor.withOpacity(isDark ? 0.2 : 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: badgeColor.withOpacity(0.4)),
+                            ),
+                            child: Text(
+                              badgeText,
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: badgeColor),
+                            ),
+                          ),
+                          if (riskPct > 0) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              '${riskPct.toStringAsFixed(0)}% risk',
+                              style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context)),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Actions column: view arrow + delete button
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.chevron_right_rounded,
+                        color: AppColors.getTextSecondary(context)),
+                    const SizedBox(height: 4),
+                    _deleting
+                        ? const SizedBox(
+                            width: 20, height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
+                          )
+                        : GestureDetector(
+                            onTap: _confirmAndDelete,
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(isDark ? 0.15 : 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.delete_outline_rounded,
+                                  size: 16, color: Colors.red),
+                            ),
+                          ),
                   ],
                 ),
               ),
-            ),
-
-            // Arrow
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Icon(Icons.chevron_right_rounded, color: AppColors.getTextSecondary(context)),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

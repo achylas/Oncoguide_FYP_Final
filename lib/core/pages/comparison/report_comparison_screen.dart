@@ -82,6 +82,11 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? const Color(0xFF0A0E21) : const Color(0xFFF0F2F8);
 
+    // Determine report type from the older report
+    final reportType = widget.olderReport['type']?.toString() ?? 'mammogram';
+    final isMammogramComparison = reportType == 'mammogram';
+    final isUltrasoundComparison = reportType == 'ultrasound';
+
     final olderDate = _formatDate(widget.olderReport['createdAt']);
     final newerDate = _formatDate(widget.newerReport['createdAt']);
 
@@ -90,13 +95,42 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
     final olderRiskLabel = widget.olderReport['riskLabel']?.toString() ?? '';
     final newerRiskLabel = widget.newerReport['riskLabel']?.toString() ?? '';
 
-    final olderPrediction = widget.olderReport['prediction']?.toString() ?? '';
-    final newerPrediction = widget.newerReport['prediction']?.toString() ?? '';
-    final olderConfidence = (widget.olderReport['confidence'] as num?)?.toDouble() ?? 0.0;
-    final newerConfidence = (widget.newerReport['confidence'] as num?)?.toDouble() ?? 0.0;
+    // ── Ultrasound-specific fields ────────────────────────────────────────
+    final olderUsPrediction = widget.olderReport['prediction']?.toString() ?? '';
+    final newerUsPrediction = widget.newerReport['prediction']?.toString() ?? '';
+    final olderUsConfidence = (widget.olderReport['confidence'] as num?)?.toDouble() ?? 0.0;
+    final newerUsConfidence = (widget.newerReport['confidence'] as num?)?.toDouble() ?? 0.0;
 
-    final olderGradcam = widget.olderReport['gradcamUrl']?.toString();
-    final newerGradcam = widget.newerReport['gradcamUrl']?.toString();
+    // ── Mammogram-specific fields ─────────────────────────────────────────
+    final olderMammoPrediction = widget.olderReport['mammoPrediction']?.toString() ?? '';
+    final newerMammoPrediction = widget.newerReport['mammoPrediction']?.toString() ?? '';
+    final olderMammoConfidence = (widget.olderReport['mammoConfidence'] as num?)?.toDouble() ?? 0.0;
+    final newerMammoConfidence = (widget.newerReport['mammoConfidence'] as num?)?.toDouble() ?? 0.0;
+
+    final olderDensityLabel = widget.olderReport['densityLabel']?.toString() ?? '';
+    final newerDensityLabel = widget.newerReport['densityLabel']?.toString() ?? '';
+    final olderDensityIndex = (widget.olderReport['densityIndex'] as num?)?.toInt();
+    final newerDensityIndex = (widget.newerReport['densityIndex'] as num?)?.toInt();
+    final olderDensityConf  = (widget.olderReport['densityConfidence'] as num?)?.toDouble() ?? 0.0;
+    final newerDensityConf  = (widget.newerReport['densityConfidence'] as num?)?.toDouble() ?? 0.0;
+
+    final olderGradcamUs      = widget.olderReport['gradcamUrl']?.toString();
+    final newerGradcamUs      = widget.newerReport['gradcamUrl']?.toString();
+    final olderGradcamDensity = widget.olderReport['densityGradcamUrl']?.toString();
+    final newerGradcamDensity = widget.newerReport['densityGradcamUrl']?.toString();
+    final olderGradcamMammo   = widget.olderReport['mammoGradcamUrl']?.toString();
+    final newerGradcamMammo   = widget.newerReport['mammoGradcamUrl']?.toString();
+
+    // Show GradCAM section only for the relevant type
+    final hasUsGradcam = isUltrasoundComparison &&
+        (olderGradcamUs != null || newerGradcamUs != null);
+    final hasDensityGradcam = isMammogramComparison &&
+        ((olderGradcamDensity != null && olderGradcamDensity.isNotEmpty) ||
+         (newerGradcamDensity != null && newerGradcamDensity.isNotEmpty));
+    final hasMammoGradcam = isMammogramComparison &&
+        ((olderGradcamMammo != null && olderGradcamMammo.isNotEmpty) ||
+         (newerGradcamMammo != null && newerGradcamMammo.isNotEmpty));
+    final hasAnyGradcam = hasUsGradcam || hasDensityGradcam || hasMammoGradcam;
 
     final olderImage = widget.olderReport['mammogramUrl']?.toString() ??
         widget.olderReport['ultrasoundUrl']?.toString();
@@ -194,55 +228,213 @@ class _ReportComparisonScreenState extends State<ReportComparisonScreen> {
             ),
             const SizedBox(height: 20),
 
-            if (olderPrediction.isNotEmpty || newerPrediction.isNotEmpty) ...[
+            // ── Ultrasound: show US prediction ────────────────────────────
+            if (isUltrasoundComparison &&
+                (olderUsPrediction.isNotEmpty || newerUsPrediction.isNotEmpty)) ...[
               _SectionTitle('Ultrasound Prediction', Icons.waves_rounded),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _PredictionCard(
-                      isDark: isDark,
-                      prediction: olderPrediction,
-                      confidence: olderConfidence,
-                      isOlder: true,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _PredictionCard(
-                      isDark: isDark,
-                      prediction: newerPrediction,
-                      confidence: newerConfidence,
-                      isOlder: false,
-                    ),
-                  ),
-                ],
-              ),
+              Row(children: [
+                Expanded(child: _PredictionCard(
+                  isDark: isDark,
+                  prediction: olderUsPrediction,
+                  confidence: olderUsConfidence,
+                  isOlder: true,
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: _PredictionCard(
+                  isDark: isDark,
+                  prediction: newerUsPrediction,
+                  confidence: newerUsConfidence,
+                  isOlder: false,
+                )),
+              ]),
               const SizedBox(height: 20),
             ],
 
-            if (olderGradcam != null || newerGradcam != null) ...[
-              _SectionTitle('GradCAM Analysis', Icons.thermostat_rounded),
+            // ── Mammogram: show mammogram finding prediction ───────────────
+            if (isMammogramComparison &&
+                (olderMammoPrediction.isNotEmpty || newerMammoPrediction.isNotEmpty)) ...[
+              _SectionTitle('Mammogram Finding', Icons.monitor_heart_rounded),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _ImageCard(
-                      isDark: isDark,
-                      imageUrl: olderGradcam,
-                      label: 'Older',
+              Row(children: [
+                Expanded(child: _PredictionCard(
+                  isDark: isDark,
+                  prediction: olderMammoPrediction,
+                  confidence: olderMammoConfidence,
+                  isOlder: true,
+                  isMammogram: true,
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: _PredictionCard(
+                  isDark: isDark,
+                  prediction: newerMammoPrediction,
+                  confidence: newerMammoConfidence,
+                  isOlder: false,
+                  isMammogram: true,
+                )),
+              ]),
+              const SizedBox(height: 20),
+            ],
+
+            // ── Mammogram: show density comparison ────────────────────────
+            if (isMammogramComparison &&
+                (olderDensityLabel.isNotEmpty || newerDensityLabel.isNotEmpty)) ...[
+              _SectionTitle('Breast Density', Icons.density_medium_rounded),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(child: _DensityCard(
+                  isDark: isDark,
+                  densityLabel: olderDensityLabel,
+                  densityIndex: olderDensityIndex,
+                  confidence: olderDensityConf,
+                  isOlder: true,
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: _DensityCard(
+                  isDark: isDark,
+                  densityLabel: newerDensityLabel,
+                  densityIndex: newerDensityIndex,
+                  confidence: newerDensityConf,
+                  isOlder: false,
+                )),
+              ]),
+              if (_comparison.densityChange != null && _comparison.densityChange != 0) ...[
+                const SizedBox(height: 8),
+                _ChangeIndicator(
+                  change: _comparison.densityChange!.toDouble(),
+                  label: 'Density',
+                  isPercentage: false,
+                ),
+              ],
+              const SizedBox(height: 20),
+            ],
+
+            if (hasAnyGradcam) ...[
+              _SectionTitle('GradCAM — AI Visual Explanation', Icons.thermostat_rounded),
+              const SizedBox(height: 8),
+              // Explanation banner
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6C63FF).withOpacity(isDark ? 0.12 : 0.07),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF6C63FF).withOpacity(0.25)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.info_outline_rounded, size: 15, color: Color(0xFF6C63FF)),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    'Heatmaps highlight which image regions drove the AI prediction. '
+                    'Red = high influence, blue = low influence.',
+                    style: TextStyle(
+                      fontSize: 11.5, height: 1.5,
+                      color: isDark ? const Color(0xFFB0B3C5) : const Color(0xFF4B5563),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _ImageCard(
-                      isDark: isDark,
-                      imageUrl: newerGradcam,
-                      label: 'Newer',
-                    ),
-                  ),
-                ],
+                  )),
+                ]),
               ),
+              const SizedBox(height: 14),
+
+              // ── Ultrasound GradCAM ──────────────────────────────────────────
+              if (olderGradcamUs != null || newerGradcamUs != null) ...[
+                _GradCamRowLabel(
+                  isDark: isDark,
+                  icon: Icons.waves_rounded,
+                  color: const Color(0xFF6C63FF),
+                  label: 'Ultrasound GradCAM',
+                  subtitle: 'AI focus regions on ultrasound scan',
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _GradCamCard(
+                      isDark: isDark,
+                      imageUrl: olderGradcamUs,
+                      isBase64: false,
+                      reportLabel: 'Older Report',
+                      isOlder: true,
+                    )),
+                    const SizedBox(width: 12),
+                    Expanded(child: _GradCamCard(
+                      isDark: isDark,
+                      imageUrl: newerGradcamUs,
+                      isBase64: false,
+                      reportLabel: 'Newer Report',
+                      isOlder: false,
+                    )),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // ── Density GradCAM ─────────────────────────────────────────────
+              if ((olderGradcamDensity != null && olderGradcamDensity.isNotEmpty) ||
+                  (newerGradcamDensity != null && newerGradcamDensity.isNotEmpty)) ...[
+                _GradCamRowLabel(
+                  isDark: isDark,
+                  icon: Icons.density_medium_rounded,
+                  color: const Color(0xFFFF6F91),
+                  label: 'Mammogram Density GradCAM',
+                  subtitle: 'AI focus regions on CC mammogram view',
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _GradCamCard(
+                      isDark: isDark,
+                      imageUrl: olderGradcamDensity,
+                      isBase64: false,
+                      reportLabel: 'Older Report',
+                      isOlder: true,
+                    )),
+                    const SizedBox(width: 12),
+                    Expanded(child: _GradCamCard(
+                      isDark: isDark,
+                      imageUrl: newerGradcamDensity,
+                      isBase64: false,
+                      reportLabel: 'Newer Report',
+                      isOlder: false,
+                    )),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // ── Mammogram Finding GradCAM ────────────────────────────────────
+              if ((olderGradcamMammo != null && olderGradcamMammo.isNotEmpty) ||
+                  (newerGradcamMammo != null && newerGradcamMammo.isNotEmpty)) ...[
+                _GradCamRowLabel(
+                  isDark: isDark,
+                  icon: Icons.monitor_heart_rounded,
+                  color: const Color(0xFFF59E0B),
+                  label: 'Mammogram Finding GradCAM',
+                  subtitle: 'AI focus regions for BI-RADS classification',
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _GradCamCard(
+                      isDark: isDark,
+                      imageUrl: olderGradcamMammo,
+                      isBase64: false,
+                      reportLabel: 'Older Report',
+                      isOlder: true,
+                    )),
+                    const SizedBox(width: 12),
+                    Expanded(child: _GradCamCard(
+                      isDark: isDark,
+                      imageUrl: newerGradcamMammo,
+                      isBase64: false,
+                      reportLabel: 'Newer Report',
+                      isOlder: false,
+                    )),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
               const SizedBox(height: 20),
             ],
 
@@ -712,23 +904,37 @@ class _PredictionCard extends StatelessWidget {
   final String prediction;
   final double confidence;
   final bool isOlder;
+  final bool isMammogram;
 
   const _PredictionCard({
     required this.isDark,
     required this.prediction,
     required this.confidence,
     required this.isOlder,
+    this.isMammogram = false,
   });
 
   @override
   Widget build(BuildContext context) {
     Color predColor;
-    if (prediction == 'Malignant') {
-      predColor = const Color(0xFFEF4444);
-    } else if (prediction == 'Benign') {
-      predColor = const Color(0xFFF59E0B);
+    if (isMammogram) {
+      // Mammogram: Normal / Benign / Suspicious
+      if (prediction == 'Suspicious') {
+        predColor = const Color(0xFFEF4444);
+      } else if (prediction == 'Benign') {
+        predColor = const Color(0xFFF59E0B);
+      } else {
+        predColor = const Color(0xFF10B981);
+      }
     } else {
-      predColor = const Color(0xFF10B981);
+      // Ultrasound: Benign / Normal / Malignant
+      if (prediction == 'Malignant') {
+        predColor = const Color(0xFFEF4444);
+      } else if (prediction == 'Benign') {
+        predColor = const Color(0xFFF59E0B);
+      } else {
+        predColor = const Color(0xFF10B981);
+      }
     }
 
     return Container(
@@ -993,8 +1199,232 @@ class _ShapCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Recommendations Card
+// GradCAM Row Label
 // ─────────────────────────────────────────────────────────────────────────────
+class _GradCamRowLabel extends StatelessWidget {
+  final bool isDark;
+  final IconData icon;
+  final Color color;
+  final String label;
+  final String subtitle;
+
+  const _GradCamRowLabel({
+    required this.isDark,
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      Container(
+        padding: const EdgeInsets.all(7),
+        decoration: BoxDecoration(
+          color: color.withOpacity(isDark ? 0.18 : 0.1),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Icon(icon, color: color, size: 16),
+      ),
+      const SizedBox(width: 10),
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: TextStyle(
+          fontSize: 13, fontWeight: FontWeight.w800,
+          color: AppColors.getTextPrimary(context),
+        )),
+        Text(subtitle, style: TextStyle(
+          fontSize: 11, color: AppColors.getTextSecondary(context),
+        )),
+      ]),
+    ]);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GradCAM Card — network image from Supabase URL
+// ─────────────────────────────────────────────────────────────────────────────
+class _GradCamCard extends StatelessWidget {
+  final bool isDark;
+  final String? imageUrl;
+  final bool isBase64;      // kept for API compatibility, ignored (all URLs now)
+  final String reportLabel;
+  final bool isOlder;
+
+  const _GradCamCard({
+    required this.isDark,
+    required this.imageUrl,
+    required this.isBase64,
+    required this.reportLabel,
+    required this.isOlder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = isOlder
+        ? Colors.grey.withOpacity(0.35)
+        : const Color(0xFF6366F1).withOpacity(0.4);
+    final labelColor = isOlder ? Colors.grey : const Color(0xFF6366F1);
+    final bool hasImage = imageUrl != null && imageUrl!.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            child: Row(children: [
+              Container(
+                width: 8, height: 8,
+                decoration: BoxDecoration(color: labelColor, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Text(reportLabel, style: TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w700, color: labelColor,
+              )),
+            ]),
+          ),
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
+            child: hasImage
+                ? Image.network(
+                    imageUrl!,
+                    height: 180,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (ctx, child, progress) => progress == null
+                        ? child
+                        : const SizedBox(height: 180,
+                            child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+                    errorBuilder: (_, __, ___) => _noImagePlaceholder(isDark),
+                  )
+                : _noImagePlaceholder(isDark),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _noImagePlaceholder(bool isDark) {
+    return Container(
+      height: 180,
+      color: isDark ? const Color(0xFF252840) : const Color(0xFFF3F4F6),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.thermostat_rounded,
+            size: 36, color: isDark ? const Color(0xFF4A4D6A) : Colors.grey[400]),
+        const SizedBox(height: 8),
+        Text('No GradCAM available',
+            style: TextStyle(
+              fontSize: 11,
+              color: isDark ? const Color(0xFF4A4D6A) : Colors.grey[400],
+            )),
+      ]),
+    );
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// Density Card
+// ─────────────────────────────────────────────────────────────────────────────
+class _DensityCard extends StatelessWidget {
+  final bool isDark;
+  final String densityLabel;
+  final int? densityIndex;
+  final double confidence;
+  final bool isOlder;
+
+  const _DensityCard({
+    required this.isDark,
+    required this.densityLabel,
+    required this.densityIndex,
+    required this.confidence,
+    required this.isOlder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = [
+      const Color(0xFF10B981), // A — Fatty
+      const Color(0xFF3B82F6), // B — Scattered
+      const Color(0xFFF59E0B), // C — Heterogeneous
+      const Color(0xFFEF4444), // D — Extremely Dense
+    ];
+    final idx = (densityIndex ?? 0).clamp(0, 3);
+    final color = densityLabel.isEmpty ? Colors.grey : colors[idx];
+    final densLetter = ['A', 'B', 'C', 'D'][idx];
+    final borderColor = isOlder
+        ? Colors.grey.withOpacity(0.3)
+        : const Color(0xFF6366F1).withOpacity(0.3);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(children: [
+        Text(
+          isOlder ? 'Older' : 'Newer',
+          style: TextStyle(
+            fontSize: 11,
+            color: isOlder ? Colors.grey : const Color(0xFF6366F1),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        densityLabel.isEmpty
+            ? const Text('N/A', style: TextStyle(
+                fontSize: 20, fontWeight: FontWeight.w900, color: Colors.grey))
+            : Column(children: [
+                Container(
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(isDark ? 0.2 : 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: color.withOpacity(0.4)),
+                  ),
+                  child: Center(child: Text(
+                    densLetter,
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: color),
+                  )),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  densityLabel,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color),
+                  textAlign: TextAlign.center,
+                ),
+              ]),
+        const SizedBox(height: 6),
+        if (confidence > 0)
+          Text(
+            '${confidence.toStringAsFixed(0)}% confidence',
+            style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(context)),
+          ),
+      ]),
+    );
+  }
+}
+
 class _RecommendationsCard extends StatelessWidget {
   final bool isDark;
   final List<Recommendation> recommendations;

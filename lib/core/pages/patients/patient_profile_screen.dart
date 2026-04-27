@@ -8,6 +8,7 @@ import 'package:oncoguide_v2/core/pages/history/report_detail_screen.dart';
 import 'package:oncoguide_v2/core/pages/new_analysis/screens/analysis_loading_screen.dart';
 import 'package:oncoguide_v2/core/pages/new_analysis/screens/new_analysis_screen.dart';
 import 'package:oncoguide_v2/core/widgets/resuable_top_bar.dart';
+import 'package:oncoguide_v2/services/comparison_service.dart';
 import 'package:oncoguide_v2/services/patient_images_service.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -556,113 +557,138 @@ class _ReportsTab extends StatelessWidget {
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, usSnap) {
-                final isLoading =
-                    radioSnap.connectionState == ConnectionState.waiting ||
-                    mammoSnap.connectionState == ConnectionState.waiting ||
-                    usSnap.connectionState == ConnectionState.waiting;
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: ComparisonService.getComparisonsForPatient(patientId),
+                  builder: (context, compSnap) {
+                    final isLoading =
+                        radioSnap.connectionState == ConnectionState.waiting ||
+                        mammoSnap.connectionState == ConnectionState.waiting ||
+                        usSnap.connectionState == ConnectionState.waiting ||
+                        compSnap.connectionState == ConnectionState.waiting;
 
-                if (isLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+                    if (isLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
 
-                if (mammoSnap.hasError || usSnap.hasError) {
-                  return _IndexErrorState(
-                    error: (mammoSnap.error ?? usSnap.error).toString(),
-                  );
-                }
+                    if (mammoSnap.hasError || usSnap.hasError) {
+                      return _IndexErrorState(
+                        error: (mammoSnap.error ?? usSnap.error).toString(),
+                      );
+                    }
 
-                final radiologistReports = (radioSnap.data?.docs ?? [])
-                    .map((d) => {'id': d.id, 'source': 'radiologist', ...d.data()})
-                    .toList();
+                    final radiologistReports = (radioSnap.data?.docs ?? [])
+                        .map((d) => {'id': d.id, 'source': 'radiologist', ...d.data()})
+                        .toList();
 
-                final doctorReports = [
-                  ...(mammoSnap.data?.docs ?? []).map(
-                      (d) => {'id': d.id, 'type': 'mammogram', 'source': 'doctor', ...d.data()}),
-                  ...(usSnap.data?.docs ?? []).map(
-                      (d) => {'id': d.id, 'type': 'ultrasound', 'source': 'doctor', ...d.data()}),
-                ];
-                doctorReports.sort((a, b) {
-                  final ta = a['createdAt'];
-                  final tb = b['createdAt'];
-                  if (ta is Timestamp && tb is Timestamp) return tb.compareTo(ta);
-                  return 0;
-                });
+                    final doctorReports = [
+                      ...(mammoSnap.data?.docs ?? []).map(
+                          (d) => {'id': d.id, 'type': 'mammogram', 'source': 'doctor', ...d.data()}),
+                      ...(usSnap.data?.docs ?? []).map(
+                          (d) => {'id': d.id, 'type': 'ultrasound', 'source': 'doctor', ...d.data()}),
+                    ];
+                    doctorReports.sort((a, b) {
+                      final ta = a['createdAt'];
+                      final tb = b['createdAt'];
+                      if (ta is Timestamp && tb is Timestamp) return tb.compareTo(ta);
+                      return 0;
+                    });
 
-                final hasAny = radiologistReports.isNotEmpty || doctorReports.isNotEmpty;
+                    final comparisonReports = (compSnap.data?.docs ?? [])
+                        .map((d) => {'id': d.id, 'source': 'comparison', ...d.data()})
+                        .toList();
 
-                if (!hasAny) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.08),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.description_outlined,
-                              size: 48, color: AppColors.primary.withOpacity(0.5)),
+                    final hasAny = radiologistReports.isNotEmpty ||
+                        doctorReports.isNotEmpty ||
+                        comparisonReports.isNotEmpty;
+
+                    if (!hasAny) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(Icons.description_outlined,
+                                  size: 48, color: AppColors.primary.withOpacity(0.5)),
+                            ),
+                            const SizedBox(height: 16),
+                            Text('No reports yet',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.getTextSecondary(context),
+                                )),
+                            const SizedBox(height: 6),
+                            Text('Generate a report using the button below',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.getTextSecondary(context).withOpacity(0.6),
+                                )),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        Text('No reports yet',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.getTextSecondary(context),
-                            )),
-                        const SizedBox(height: 6),
-                        Text('Generate a report using the button below',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppColors.getTextSecondary(context).withOpacity(0.6),
-                            )),
+                      );
+                    }
+
+                    return ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                      children: [
+                        // ── Compare Reports Button ───────────────────────────
+                        if (doctorReports.length >= 2) ...[
+                          _CompareReportsButton(
+                            patientId: patientId,
+                            patientName: radiologistReports.isNotEmpty
+                                ? radiologistReports.first['patientName']?.toString() ?? 'Unknown'
+                                : doctorReports.first['patientName']?.toString() ?? 'Unknown',
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+
+                        // ── Comparison Reports ───────────────────────────────
+                        if (comparisonReports.isNotEmpty) ...[
+                          _ReportSectionHeader(
+                            label: 'Comparison Reports',
+                            icon: Icons.compare_arrows_rounded,
+                            color: const Color(0xFF6366F1),
+                            count: comparisonReports.length,
+                          ),
+                          const SizedBox(height: 10),
+                          ...comparisonReports.map((r) => _ComparisonReportCard(data: r)),
+                          const SizedBox(height: 20),
+                        ],
+
+                        // ── Radiologist Reports ──────────────────────────────
+                        _ReportSectionHeader(
+                          label: 'Radiologist Reports',
+                          icon: Icons.local_hospital_rounded,
+                          color: const Color(0xFF6C63FF),
+                          count: radiologistReports.length,
+                        ),
+                        const SizedBox(height: 10),
+                        if (radiologistReports.isEmpty)
+                          _EmptySectionNote('No radiologist reports yet')
+                        else
+                          ...radiologistReports.map((r) => _RadiologistReportCard(data: r)),
+                        const SizedBox(height: 20),
+
+                        // ── Doctor Reports ───────────────────────────────────
+                        _ReportSectionHeader(
+                          label: 'Doctor Reports',
+                          icon: Icons.medical_services_outlined,
+                          color: const Color(0xFFFF6F91),
+                          count: doctorReports.length,
+                        ),
+                        const SizedBox(height: 10),
+                        if (doctorReports.isEmpty)
+                          _EmptySectionNote('No doctor reports yet')
+                        else
+                          ...doctorReports.map((r) => _DoctorReportCard(data: r)),
                       ],
-                    ),
-                  );
-                }
-
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                  children: [
-                    // ── Compare Reports Button ───────────────────────────
-                    if (doctorReports.length >= 2) ...[
-                      _CompareReportsButton(
-                        patientId: patientId,
-                        patientName: radiologistReports.isNotEmpty
-                            ? radiologistReports.first['patientName']?.toString() ?? 'Unknown'
-                            : doctorReports.first['patientName']?.toString() ?? 'Unknown',
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-
-                    // ── Radiologist Reports ──────────────────────────────
-                    _ReportSectionHeader(
-                      label: 'Radiologist Reports',
-                      icon: Icons.local_hospital_rounded,
-                      color: const Color(0xFF6C63FF),
-                      count: radiologistReports.length,
-                    ),
-                    const SizedBox(height: 10),
-                    if (radiologistReports.isEmpty)
-                      _EmptySectionNote('No radiologist reports yet')
-                    else
-                      ...radiologistReports.map((r) => _RadiologistReportCard(data: r)),
-                    const SizedBox(height: 20),
-
-                    // ── Doctor Reports ───────────────────────────────────
-                    _ReportSectionHeader(
-                      label: 'Doctor Reports',
-                      icon: Icons.medical_services_outlined,
-                      color: const Color(0xFFFF6F91),
-                      count: doctorReports.length,
-                    ),
-                    const SizedBox(height: 10),
-                    if (doctorReports.isEmpty)
-                      _EmptySectionNote('No doctor reports yet')
-                    else
-                      ...doctorReports.map((r) => _DoctorReportCard(data: r)),
-                  ],
+                    );
+                  },
                 );
               },
             );
@@ -890,6 +916,190 @@ class _RadiologistReportCard extends StatelessWidget {
               child: Icon(Icons.chevron_right_rounded,
                   color: AppColors.getTextSecondary(context)),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Comparison report card
+class _ComparisonReportCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _ComparisonReportCard({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark       = Theme.of(context).brightness == Brightness.dark;
+    const color        = Color(0xFF6366F1);
+    final reportType   = data['reportType']?.toString() ?? '';
+    final isMammo      = reportType == 'mammogram';
+    final typeLabel    = isMammo ? 'Mammogram' : reportType == 'ultrasound' ? 'Ultrasound' : 'Report';
+    final trend        = data['overallTrend']?.toString() ?? '';
+    final riskChange   = (data['riskChange'] as num?)?.toDouble() ?? 0.0;
+    final summary      = data['summary']?.toString() ?? '';
+
+    // Trend colour + icon
+    Color trendColor;
+    IconData trendIcon;
+    String trendLabel;
+    switch (trend) {
+      case 'improving':
+        trendColor = const Color(0xFF10B981);
+        trendIcon  = Icons.trending_down_rounded;
+        trendLabel = 'Improving';
+        break;
+      case 'declining':
+        trendColor = const Color(0xFFEF4444);
+        trendIcon  = Icons.trending_up_rounded;
+        trendLabel = 'Declining';
+        break;
+      case 'stable':
+        trendColor = const Color(0xFF6366F1);
+        trendIcon  = Icons.trending_flat_rounded;
+        trendLabel = 'Stable';
+        break;
+      default:
+        trendColor = const Color(0xFFF59E0B);
+        trendIcon  = Icons.swap_vert_rounded;
+        trendLabel = 'Mixed';
+    }
+
+    String dateStr = '';
+    final ts = data['createdAt'];
+    if (ts is Timestamp) {
+      final dt = ts.toDate();
+      const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      dateStr = '${dt.day} ${m[dt.month - 1]} ${dt.year}';
+    }
+
+    // Older / newer report dates
+    String olderDate = '', newerDate = '';
+    final ots = data['olderReportDate'];
+    final nts = data['newerReportDate'];
+    if (ots is Timestamp) {
+      final dt = ots.toDate();
+      olderDate = '${dt.day}/${dt.month}/${dt.year}';
+    }
+    if (nts is Timestamp) {
+      final dt = nts.toDate();
+      newerDate = '${dt.day}/${dt.month}/${dt.year}';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.35), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(isDark ? 0.08 : 0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header row ──────────────────────────────────────────────
+            Row(children: [
+              // "Comparison Report" badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                  ),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.compare_arrows_rounded, size: 11, color: Colors.white),
+                  const SizedBox(width: 4),
+                  const Text('Comparison Report',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
+                ]),
+              ),
+              const SizedBox(width: 6),
+              // Type chip
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(typeLabel,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
+              ),
+              const Spacer(),
+              Text(dateStr,
+                  style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(context))),
+            ]),
+            const SizedBox(height: 10),
+
+            // ── Compared dates ───────────────────────────────────────────
+            if (olderDate.isNotEmpty && newerDate.isNotEmpty)
+              Row(children: [
+                const Icon(Icons.history_rounded, size: 13, color: Color(0xFF6366F1)),
+                const SizedBox(width: 5),
+                Text('$olderDate  →  $newerDate',
+                    style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600,
+                      color: AppColors.getTextSecondary(context),
+                    )),
+              ]),
+            const SizedBox(height: 8),
+
+            // ── Trend + risk change ──────────────────────────────────────
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: trendColor.withOpacity(isDark ? 0.15 : 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: trendColor.withOpacity(0.3)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(trendIcon, size: 14, color: trendColor),
+                  const SizedBox(width: 5),
+                  Text(trendLabel,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: trendColor)),
+                ]),
+              ),
+              if (riskChange != 0) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: (riskChange < 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444))
+                        .withOpacity(isDark ? 0.15 : 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${riskChange > 0 ? '+' : ''}${riskChange.toStringAsFixed(1)}% risk',
+                    style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700,
+                      color: riskChange < 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                    ),
+                  ),
+                ),
+              ],
+            ]),
+
+            // ── Summary ──────────────────────────────────────────────────
+            if (summary.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(summary,
+                  style: TextStyle(
+                    fontSize: 12, height: 1.5,
+                    color: AppColors.getTextSecondary(context),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis),
+            ],
           ],
         ),
       ),
