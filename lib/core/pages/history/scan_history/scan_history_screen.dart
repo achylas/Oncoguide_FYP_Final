@@ -79,8 +79,6 @@ class _ScanHistoryPageState extends State<ScanHistoryPage> {
     if (_selectedFilter != 'All') {
       filtered = filtered.where((scan) {
         switch (_selectedFilter) {
-          case 'High Risk':
-            return scan.severity == ScanSeverity.high;
           case 'Medium Risk':
             return scan.severity == ScanSeverity.medium;
           case 'Low Risk':
@@ -132,15 +130,7 @@ class _ScanHistoryPageState extends State<ScanHistoryPage> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
-                        label: 'High Risk',
-                        value: '${_scans.where((s) => s.severity == ScanSeverity.high).length}',
-                        icon: Icons.warning_rounded,
-                        color: const Color(0xFFEF4444),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
+        
                     Expanded(
                       child: _buildStatCard(
                         label: 'Clear',
@@ -217,7 +207,7 @@ class _ScanHistoryPageState extends State<ScanHistoryPage> {
               child: Row(
                 children: [
                   _buildFilterChip('All'),
-                  _buildFilterChip('High Risk'),
+                  
                   _buildFilterChip('Medium Risk'),
                   _buildFilterChip('Low Risk'),
                   _buildFilterChip('Clear'),

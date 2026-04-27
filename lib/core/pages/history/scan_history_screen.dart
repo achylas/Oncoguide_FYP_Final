@@ -18,7 +18,6 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen>
 
   final _tabs = const [
     _TabDef('All',        Icons.list_alt_rounded,       null),
-    _TabDef('High Risk',  Icons.warning_rounded,         Color(0xFFEF4444)),
     _TabDef('Cancer',     Icons.coronavirus_rounded,     Color(0xFFDC2626)),
     _TabDef('Mammogram',  Icons.monitor_heart_outlined,  Color(0xFFFF6F91)),
     _TabDef('Ultrasound', Icons.waves_rounded,           Color(0xFF6C63FF)),
@@ -27,7 +26,7 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _tabs.length, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -81,13 +80,6 @@ class _ScanHistoryScreenState extends State<ScanHistoryScreen>
               children: [
                 // All — shows both mammogram + ultrasound reports
                 _AllReportsTab(),
-                // High Risk
-                _StreamTab(
-                  stream: ReportService.riskPatientsStream(),
-                  emptyLabel: 'No high risk patients',
-                  emptyIcon: Icons.warning_rounded,
-                  cardType: _CardType.riskPatient,
-                ),
                 // Cancer (Malignant)
                 _StreamTab(
                   stream: ReportService.cancerPatientsStream(),
