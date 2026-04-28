@@ -105,7 +105,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
     // ── Source ────────────────────────────────────────────────────────────
     final source = d['source']?.toString() ?? 'doctor';
-    final isRadiologist = source == 'radiologist';
+    final isRadiologist = source == 'radiologist' || source == 'radiologist_web';
 
     // ── Patient ───────────────────────────────────────────────────────────
     final patientName = d['patientName']?.toString() ?? 'Unknown';
@@ -453,6 +453,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 usResult: usResult,
                 densityResult: densityResult,
                 mammoResult: mammoResult,
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // ── 9b. Radiologist comment (shown when AI confidence was < 60%) ──
+            if ((d['radiologistComment']?.toString() ?? '').isNotEmpty) ...[
+              _RadiologistCommentCard(
+                isDark: isDark,
+                comment: d['radiologistComment'].toString(),
               ),
               const SizedBox(height: 20),
             ],
@@ -1365,6 +1374,143 @@ class _RecommendationsCard extends StatelessWidget {
           );
         }),
       ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Radiologist Comment Card
+// Shown when the AI confidence was below 60 % and the radiologist added a
+// mandatory clinical interpretation before saving the report.
+// ─────────────────────────────────────────────────────────────────────────────
+class _RadiologistCommentCard extends StatelessWidget {
+  final bool isDark;
+  final String comment;
+  const _RadiologistCommentCard({required this.isDark, required this.comment});
+
+  @override
+  Widget build(BuildContext context) {
+    const accentColor = Color(0xFF7C3AED); // violet-700
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1D2E) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accentColor.withOpacity(0.35), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: accentColor.withOpacity(isDark ? 0.15 : 0.08),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ──────────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: accentColor.withOpacity(isDark ? 0.18 : 0.07),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: accentColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Icon(Icons.rate_review_rounded, color: accentColor, size: 17),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Radiologist\'s Clinical Interpretation',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : const Color(0xFF1F2937),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Added because AI confidence was below 60%',
+                        style: TextStyle(fontSize: 11, color: accentColor, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+                // Low-confidence badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(7),
+                    border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 12, color: Color(0xFFF59E0B)),
+                      SizedBox(width: 4),
+                      Text(
+                        'Low AI conf.',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFF59E0B)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Comment body ─────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              comment,
+              style: TextStyle(
+                fontSize: 13.5,
+                height: 1.65,
+                color: isDark ? const Color(0xFFD1D5DB) : const Color(0xFF374151),
+              ),
+            ),
+          ),
+
+          // ── Footer note ──────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.white.withOpacity(0.03) : const Color(0xFFF9FAFB),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+              border: Border(top: BorderSide(color: accentColor.withOpacity(0.15))),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, size: 13, color: AppColors.getTextSecondary(context)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'This interpretation was provided by the radiologist and should be considered alongside the AI results.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.4,
+                      color: AppColors.getTextSecondary(context),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
